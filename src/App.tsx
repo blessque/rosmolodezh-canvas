@@ -4,6 +4,8 @@ import { ModeTabBar } from '@/components/ModeTabBar';
 import { CanvasSizeSelector } from '@/components/CanvasSizeSelector';
 import { GeneratorPanel } from '@/modes/generator/GeneratorPanel';
 import { StampPanel } from '@/modes/stamp/StampPanel';
+import { GeneratorCanvas } from '@/modes/generator/GeneratorCanvas';
+import { StampCanvas } from '@/modes/stamp/StampCanvas';
 import { exportPNG } from '@/export/exportPNG';
 import { exportSVG } from '@/export/exportSVG';
 
@@ -33,7 +35,10 @@ export default function App() {
 
         {/* Canvas area */}
         <main className="flex-1 overflow-hidden bg-black p-6 pb-[calc(1.5rem+52px)]">
-          <CanvasRoot />
+          <CanvasRoot>
+            {mode === 'generator' && <GeneratorCanvas />}
+            {mode === 'stamp' && <StampCanvas />}
+          </CanvasRoot>
         </main>
       </div>
 
