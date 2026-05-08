@@ -11,21 +11,18 @@ export interface ViewportState {
 }
 
 export type AppMode = 'generator' | 'stamp';
-export type GeneratorComplexity = 2 | 3 | 4;
 
 interface UIStoreState {
   mode: AppMode;
   viewport: ViewportState;
   canvasColor: string;
   shapeColor: string;
-  complexity: GeneratorComplexity;
 
   setMode: (mode: AppMode) => void;
   setViewport: (partial: Partial<ViewportState>) => void;
   setDocumentSize: (w: number, h: number) => void;
   setCanvasColor: (c: string) => void;
   setShapeColor: (c: string) => void;
-  setComplexity: (n: GeneratorComplexity) => void;
 }
 
 export const useUIStore = create<UIStoreState>((set) => ({
@@ -41,7 +38,6 @@ export const useUIStore = create<UIStoreState>((set) => ({
   },
   canvasColor: '#0E0F11',
   shapeColor: '#FFFFFF',
-  complexity: 3,
 
   setMode: (mode) => set({ mode }),
 
@@ -55,5 +51,4 @@ export const useUIStore = create<UIStoreState>((set) => ({
 
   setCanvasColor: (c) => set({ canvasColor: c }),
   setShapeColor: (c) => set({ shapeColor: c }),
-  setComplexity: (n) => set({ complexity: n }),
 }));

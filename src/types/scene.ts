@@ -1,5 +1,8 @@
 // ─── Mode 1: Generator ───────────────────────────────────────────────────────
 
+/** Controls whether a rect's top edge is angled (one corner raised) or flat (both at same Y) */
+export type TopStyle = 'angled' | 'flat';
+
 /** A single perspective-transformed rectangle within a compound shape */
 export interface PerspectiveRect {
   id: string;
@@ -8,10 +11,18 @@ export interface PerspectiveRect {
   w: number;
   h: number;
   cornerRadius: number;
-  /** Which side the perspective depth expands toward */
-  expand: 'left' | 'right';
-  /** Depth of the perspective transform in document units */
-  depth: number;
+  /** Y shift of the top-left corner in document units (negative = raised up) */
+  topLeftOffset: number;
+  /** Y shift of the top-right corner in document units (negative = raised up) */
+  topRightOffset: number;
+  /** Y shift of the bottom-right corner (positive = pushed further down, negative = raised up) */
+  bottomRightOffset: number;
+  /** Y shift of the bottom-left corner (positive = pushed further down, negative = raised up) */
+  bottomLeftOffset: number;
+  /** Rotation around the rect's geometric center, in degrees (negative = counter-clockwise) */
+  rotation: number;
+  /** Whether the top edge is angled or flat (tlo == tro when flat) */
+  topStyle: TopStyle;
 }
 
 /** The compound shape built from several perspective rects */
@@ -23,6 +34,7 @@ export interface CompoundShape {
   imageUrl?: string;
   /** Index into rects[] that receives the image mask */
   maskedRectIndex: number;
+
 }
 
 // ─── Mode 2: Stamp ───────────────────────────────────────────────────────────

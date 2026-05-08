@@ -7,6 +7,20 @@ import { documentToCanvas } from '@/utils/coordinates';
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+function rotatePoint(
+  px: number, py: number,
+  cx: number, cy: number,
+  angleDeg: number,
+): paper.Point {
+  const rad = angleDeg * Math.PI / 180;
+  const dx  = px - cx;
+  const dy  = py - cy;
+  return new paper.Point(
+    cx + dx * Math.cos(rad) - dy * Math.sin(rad),
+    cy + dx * Math.sin(rad) + dy * Math.cos(rad),
+  );
+}
+
 function normalize(v: paper.Point): paper.Point {
   const len = Math.sqrt(v.x * v.x + v.y * v.y);
   if (len < 1e-10) return new paper.Point(0, 0);
@@ -19,27 +33,28 @@ function vecLength(v: paper.Point): number {
 
 /** Build a smooth-cornered Paper.js path for a single PerspectiveRect. */
 function buildRectPath(rect: PerspectiveRect): paper.Path {
-  const { x, y, w, h, depth, expand, cornerRadius: r } = rect;
+  const {
+    x, y, w, h,
+    topLeftOffset, topRightOffset,
+    bottomRightOffset, bottomLeftOffset,
+    cornerRadius: r, rotation,
+  } = rect;
 
-  // Compute the 4 corners of the quadrilateral
-  let corners: paper.Point[];
-  if (expand === 'right') {
-    // TL, TR, BR, BL
-    corners = [
-      new paper.Point(x,     y),
-      new paper.Point(x + w, y - depth),
-      new paper.Point(x + w, y + h),
-      new paper.Point(x,     y + h),
-    ];
-  } else {
-    // expand === 'left'
-    corners = [
-      new paper.Point(x,     y - depth),
-      new paper.Point(x + w, y),
-      new paper.Point(x + w, y + h),
-      new paper.Point(x,     y + h),
-    ];
-  }
+  // Geometric center of the rect (used as rotation pivot)
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+
+  // Compute the 4 raw corners of the quadrilateral, then rotate each around center.
+  // Top offsets: negative = raised up. Bottom offsets: positive = pushed further down.
+  const rawCorners: Array<[number, number]> = [
+    [x,     y + topLeftOffset],              // TL
+    [x + w, y + topRightOffset],             // TR
+    [x + w, y + h + bottomRightOffset],      // BR
+    [x,     y + h + bottomLeftOffset],       // BL
+  ];
+  const corners: paper.Point[] = rawCorners.map(
+    ([px, py]) => rotatePoint(px, py, cx, cy, rotation),
+  );
 
   const n = corners.length; // 4
   const segments: paper.Segment[] = [];
@@ -97,6 +112,162 @@ function buildRectPath(rect: PerspectiveRect): paper.Path {
 }
 
 // ---------------------------------------------------------------------------
+// Inner-corner rounding after unite()
+// ---------------------------------------------------------------------------
+
+/**
+ * Round concave junction vertices that unite() inserts into the united path.
+ * Detection criterion: segment with both handles near-zero → was a straight-edge
+ * intersection vertex. Cross product determines concavity (CW path, y-down).
+ */
+function roundConcaveJunctions(pathItem: paper.PathItem, r: number): void {
+  if (r <= 0) return;
+
+  const paths: paper.Path[] = [];
+  if (pathItem instanceof paper.CompoundPath) {
+    for (const child of (pathItem as paper.CompoundPath).children) {
+      paths.push(child as paper.Path);
+    }
+  } else {
+    paths.push(pathItem as paper.Path);
+  }
+
+  for (const path of paths) {
+    roundConcavePath(path, r);
+  }
+}
+
+function roundConcavePath(path: paper.Path, r: number): void {
+  const segs = path.segments;
+  const n = segs.length;
+  const eps = 1; // doc-unit threshold for "near-zero handle"
+
+  const newSegs: paper.Segment[] = [];
+
+  for (let i = 0; i < n; i++) {
+    const prev = segs[(i + n - 1) % n]!;
+    const curr = segs[i]!;
+    const next = segs[(i + 1) % n]!;
+
+    const hiLen = Math.sqrt(curr.handleIn.x ** 2 + curr.handleIn.y ** 2);
+    const hoLen = Math.sqrt(curr.handleOut.x ** 2 + curr.handleOut.y ** 2);
+
+    if (hiLen < eps && hoLen < eps) {
+      // Junction vertex candidate — check concavity via cross product
+      const inX = curr.point.x - prev.point.x;
+      const inY = curr.point.y - prev.point.y;
+      const outX = next.point.x - curr.point.x;
+      const outY = next.point.y - curr.point.y;
+
+      const cross = inX * outY - inY * outX; // negative → concave (CW path, y-down)
+
+      if (cross < -1e-6) {
+        const inLen  = Math.sqrt(inX * inX + inY * inY);
+        const outLen = Math.sqrt(outX * outX + outY * outY);
+        if (inLen < 1e-10 || outLen < 1e-10) { newSegs.push(curr); continue; }
+
+        const inNx = inX / inLen;    const inNy = inY / inLen;
+        const outNx = outX / outLen; const outNy = outY / outLen;
+
+        const pullback  = Math.min(r * 1.52, (inLen + outLen) / 2);
+        const handleLen = r * 0.89;
+
+        // Arriving tangent point (pulled back from junction toward prev)
+        const tpIn = new paper.Point(
+          curr.point.x - inNx * pullback,
+          curr.point.y - inNy * pullback,
+        );
+        // Departing tangent point (moved forward from junction toward next)
+        const tpOut = new paper.Point(
+          curr.point.x + outNx * pullback,
+          curr.point.y + outNy * pullback,
+        );
+
+        // Handles point toward the junction apex (same convention as buildRectPath)
+        newSegs.push(new paper.Segment(
+          tpIn,
+          new paper.Point(0, 0),
+          new paper.Point(inNx * handleLen, inNy * handleLen),
+        ));
+        newSegs.push(new paper.Segment(
+          tpOut,
+          new paper.Point(-outNx * handleLen, -outNy * handleLen),
+          new paper.Point(0, 0),
+        ));
+        continue; // replaced curr with two fillet segments
+      }
+    }
+
+    // Not a concave junction — keep as-is (preserves existing bezier arcs)
+    newSegs.push(new paper.Segment(curr.point, curr.handleIn, curr.handleOut));
+  }
+
+  path.segments = newSegs;
+}
+
+// ---------------------------------------------------------------------------
+// Canvas 2D rendering helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert a Paper.js PathItem (in document coordinates) to a Path2D in
+ * canvas (screen) coordinates, ready for ctx.fill() / ctx.stroke().
+ */
+function paperItemToPath2D(
+  pathItem: paper.PathItem,
+  viewport: ViewportState,
+): Path2D {
+  const path2d = new Path2D();
+
+  const paths: paper.Path[] = [];
+  if (pathItem instanceof paper.CompoundPath) {
+    for (const child of (pathItem as paper.CompoundPath).children) {
+      paths.push(child as paper.Path);
+    }
+  } else {
+    paths.push(pathItem as paper.Path);
+  }
+
+  for (const path of paths) {
+    const segs = path.segments;
+    if (segs.length === 0) continue;
+
+    const first = segs[0]!;
+    const p0 = documentToCanvas({ x: first.point.x, y: first.point.y }, viewport);
+    path2d.moveTo(p0.x, p0.y);
+
+    for (let i = 0; i < segs.length; i++) {
+      const curr = segs[i]!;
+      const next = segs[(i + 1) % segs.length]!;
+
+      const isLine =
+        curr.handleOut.x === 0 && curr.handleOut.y === 0 &&
+        next.handleIn.x  === 0 && next.handleIn.y  === 0;
+
+      const ep = documentToCanvas({ x: next.point.x, y: next.point.y }, viewport);
+
+      if (isLine) {
+        path2d.lineTo(ep.x, ep.y);
+      } else {
+        const cp1 = documentToCanvas({
+          x: curr.point.x + curr.handleOut.x,
+          y: curr.point.y + curr.handleOut.y,
+        }, viewport);
+        const cp2 = documentToCanvas({
+          x: next.point.x + next.handleIn.x,
+          y: next.point.y + next.handleIn.y,
+        }, viewport);
+        path2d.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, ep.x, ep.y);
+      }
+    }
+
+    path2d.closePath();
+  }
+
+  return path2d;
+}
+
+// ---------------------------------------------------------------------------
 // Exported functions
 // ---------------------------------------------------------------------------
 
@@ -114,7 +285,6 @@ export function buildSmoothPath(
   scope.activate();
 
   if (shape.rects.length === 0) {
-    // Return an empty path to avoid crashing callers
     return new paper.Path();
   }
 
@@ -126,6 +296,9 @@ export function buildSmoothPath(
     rectPath.remove();
   }
 
+  // Round the concave junction vertices created by unite()
+  roundConcaveJunctions(result, shape.rects[0]?.cornerRadius ?? 30);
+
   return result;
 }
 
@@ -133,6 +306,7 @@ export function buildSmoothPath(
 
 /**
  * Render a CompoundShape onto a Canvas 2D context in viewport (screen) space.
+ * Uses Paper.js geometry for smooth bezier outer corners and rounded inner junctions.
  */
 export function renderCompound(
   ctx: CanvasRenderingContext2D,
@@ -140,100 +314,21 @@ export function renderCompound(
   color: string,
   viewport: ViewportState,
 ): void {
-  // Create an isolated PaperScope backed by a tiny offscreen canvas —
-  // we only need the geometry engine, not actual rendering.
-  const offscreen = document.createElement('canvas');
-  offscreen.width  = 1;
-  offscreen.height = 1;
+  const canvasEl = document.createElement('canvas');
+  canvasEl.width  = 1;
+  canvasEl.height = 1;
 
   const scope = new paper.PaperScope();
-  scope.setup(offscreen);
+  scope.setup(canvasEl);
   scope.activate();
 
   const pathItem = buildSmoothPath(shape, scope);
+  const path2d   = paperItemToPath2D(pathItem, viewport);
 
-  // Flatten to a single paper.Path if the union produced a CompoundPath
-  // (which can happen when rects don't overlap).
-  const paths: paper.Path[] = [];
-  if (pathItem instanceof scope.CompoundPath) {
-    const cp = pathItem as paper.CompoundPath;
-    for (const child of cp.children) {
-      paths.push(child as paper.Path);
-    }
-  } else {
-    paths.push(pathItem as paper.Path);
-  }
-
-  // Build a Path2D from each paper.Path, converting each segment point
-  // and its bezier handles from document space to canvas space.
-  const path2d = new Path2D();
-
-  for (const paperPath of paths) {
-    const segs = paperPath.segments;
-    if (segs.length === 0) continue;
-
-    const firstSeg = segs[0]!;
-    const firstPt  = documentToCanvas(
-      { x: firstSeg.point.x, y: firstSeg.point.y },
-      viewport,
-    );
-    path2d.moveTo(firstPt.x, firstPt.y);
-
-    for (let i = 1; i < segs.length; i++) {
-      const prevSeg = segs[i - 1]!;
-      const seg     = segs[i]!;
-
-      const cp1 = documentToCanvas(
-        {
-          x: prevSeg.point.x + prevSeg.handleOut.x,
-          y: prevSeg.point.y + prevSeg.handleOut.y,
-        },
-        viewport,
-      );
-      const cp2 = documentToCanvas(
-        {
-          x: seg.point.x + seg.handleIn.x,
-          y: seg.point.y + seg.handleIn.y,
-        },
-        viewport,
-      );
-      const pt = documentToCanvas(
-        { x: seg.point.x, y: seg.point.y },
-        viewport,
-      );
-      path2d.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, pt.x, pt.y);
-    }
-
-    // Close the sub-path with a bezier from last segment back to first
-    const lastSeg = segs[segs.length - 1]!;
-    const closeCp1 = documentToCanvas(
-      {
-        x: lastSeg.point.x  + lastSeg.handleOut.x,
-        y: lastSeg.point.y  + lastSeg.handleOut.y,
-      },
-      viewport,
-    );
-    const closeCp2 = documentToCanvas(
-      {
-        x: firstSeg.point.x + firstSeg.handleIn.x,
-        y: firstSeg.point.y + firstSeg.handleIn.y,
-      },
-      viewport,
-    );
-    path2d.bezierCurveTo(
-      closeCp1.x, closeCp1.y,
-      closeCp2.x, closeCp2.y,
-      firstPt.x,  firstPt.y,
-    );
-
-    path2d.closePath();
-  }
+  scope.project.clear();
 
   ctx.fillStyle = color;
-  ctx.fill(path2d);
-
-  // Clean up the Paper.js scope
-  scope.project.clear();
+  ctx.fill(path2d, 'nonzero');
 }
 
 // ---------------------------------------------------------------------------

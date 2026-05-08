@@ -1,5 +1,17 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "prompt=$(cat); echo \"$prompt\" | grep -iqE '(generator|gallery|engine|tuning|iteration|rating|shape|rect|distort|cascade|lean|topstyle|basemag|coverage|canvas aspect|sizeRatio|compound|perspective)' && printf '\\n[Auto-injected: Generator Tuning Log]\\n' && cat docs/generator/TUNING_LOG.md || exit 0"
+          }
+        ]
+      }
+    ]
+  },
   "permissions": {
     "allow": [
       "Bash(npm run *)",
