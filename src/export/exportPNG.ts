@@ -1,7 +1,8 @@
 import { useSceneStore } from '@/store/sceneStore';
 import { useUIStore } from '@/store/uiStore';
 import { renderCompound } from '@/canvas/compoundRenderer';
-import type { CompoundShape } from '@/types/scene';
+import { drawStampInstance } from '@/canvas/stampRenderer';
+import type { CompoundShape, StampStroke } from '@/types/scene';
 import type { ViewportState } from '@/store/uiStore';
 
 function identityViewport(docWidth: number, docHeight: number): ViewportState {
@@ -23,7 +24,7 @@ function identityViewport(docWidth: number, docHeight: number): ViewportState {
 export function exportPNG(docWidth: number, docHeight: number): void {
   const objects = useSceneStore.getState().objects;
   const compound = objects.find((o) => o.type === 'compound') as CompoundShape | undefined;
-  const { shapeColor, canvasColor } = useUIStore.getState();
+  const { shapeColor, canvasColor, stampSize, stampRotate45, stampImageUrl } = useUIStore.getState();
 
   const canvas = new OffscreenCanvas(docWidth, docHeight);
   const ctx = canvas.getContext('2d');
@@ -36,6 +37,19 @@ export function exportPNG(docWidth: number, docHeight: number): void {
   // Compound shape
   if (compound) {
     renderCompound(ctx as unknown as CanvasRenderingContext2D, compound, shapeColor, identityViewport(docWidth, docHeight));
+  }
+
+  // Stamp strokes (identity viewport: scale=1, offsets=0)
+  const stampStrokes = objects.filter((o) => o.type === 'stamp') as StampStroke[];
+  for (const stroke of stampStrokes) {
+    for (const inst of stroke.stamps) {
+      drawStampInstance(
+        ctx as unknown as CanvasRenderingContext2D,
+        inst.x, inst.y, stampSize,
+        inst.angle, 1, 0, 0,
+        shapeColor, stampRotate45, stampImageUrl,
+      );
+    }
   }
 
   canvas.convertToBlob({ type: 'image/png' }).then((blob) => {

@@ -17,12 +17,20 @@ interface UIStoreState {
   viewport: ViewportState;
   canvasColor: string;
   shapeColor: string;
+  stampSize: number;
+  stampStep: number;
+  stampRotate45: boolean;
+  stampImageUrl: string | null;
 
   setMode: (mode: AppMode) => void;
   setViewport: (partial: Partial<ViewportState>) => void;
   setDocumentSize: (w: number, h: number) => void;
   setCanvasColor: (c: string) => void;
   setShapeColor: (c: string) => void;
+  setStampSize: (v: number) => void;
+  setStampStep: (v: number) => void;
+  setStampRotate45: (v: boolean) => void;
+  setStampImageUrl: (url: string | null) => void;
 }
 
 export const useUIStore = create<UIStoreState>((set) => ({
@@ -38,6 +46,10 @@ export const useUIStore = create<UIStoreState>((set) => ({
   },
   canvasColor: '#FFFFFF',
   shapeColor:  '#99ECFF',
+  stampSize: 80,
+  stampStep: 120,
+  stampRotate45: false,
+  stampImageUrl: null,
 
   setMode: (mode) => set({ mode }),
 
@@ -51,4 +63,8 @@ export const useUIStore = create<UIStoreState>((set) => ({
 
   setCanvasColor: (c) => set({ canvasColor: c }),
   setShapeColor: (c) => set({ shapeColor: c }),
+  setStampSize: (v) => set({ stampSize: v }),
+  setStampStep: (v) => set({ stampStep: v }),
+  setStampRotate45: (v) => set({ stampRotate45: v }),
+  setStampImageUrl: (url) => set({ stampImageUrl: url }),
 }));
