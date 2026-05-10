@@ -42,6 +42,16 @@ export interface ShapeGenerationMeta {
   xOverlapPct: number;
   yOverlapAbsPct: number;
   overlapAreaPct: number;
+  /** Stagger px per adjacent rect pair (post-scale-to-fit).
+   *  Y/2-rect layouts: horizontal (X) stagger. X-cascade: vertical (Y) stagger. */
+  staggers: number[];
+  /** cornerRadius in doc px (not scaled by scale-to-fit) */
+  cornerRadiusPx: number;
+  /** min(staggers) − cornerRadius × 1.52 — estimated min inner path length.
+   *  Negative means junction is too tight for any visible fillet. */
+  minEstInLen: number;
+  /** Estimated min inner-corner pullback = min(r×1.52, max(0, minEstInLen)×0.49) */
+  minEstPullback: number;
 }
 
 export interface GenerateOpts {
@@ -53,6 +63,19 @@ export interface GenerateOpts {
   topStyle1?: TopStyle;
   rectCount?: 2 | 3;
   relation?: 'same' | 'opposite';
+  // Dev panel additions
+  baseMag?: number;
+  cornerRadiusMult?: number;    // replaces the fixed 0.02 factor
+  topStyle2?: TopStyle;
+  rotation2?: number;
+  bottomRight0?: number;        // fraction of rect height (negative = raised)
+  bottomLeft0?: number;
+  bottomRight1?: number;
+  bottomLeft1?: number;
+  bottomRight2?: number;
+  bottomLeft2?: number;
+  overlapFrac?: number;         // 2-rect: fraction of h0; 3-rect: fraction of docDim
+  staggerFrac?: number;         // fraction of docWidth (Y-cascade) or docHeight (X-cascade)
 }
 
 // ---------------------------------------------------------------------------
@@ -98,21 +121,29 @@ function applyTopOffset(
 /**
  * Bottom-edge distortion — brand-identity.
  * 'right-anchor' mode always returns blo=0 and a significant bro.
+ * broOverride/bloOverride are fractions of h (not pre-multiplied).
  */
 function applyBottomOffset(
   mode: DistortionMode,
   h: number,
+  broOverride?: number,
+  bloOverride?: number,
 ): { blo: number; bro: number } {
   if (mode === 'right-anchor') {
-    // Only BR moves — large push-down creates the brand trapezoid
-    return { blo: 0, bro: rand(0.20, 0.48) * h };
+    return { blo: 0, bro: (broOverride ?? rand(0.20, 0.48)) * h };
   }
-  const roll = Math.random();
   let bro: number;
-  if (roll < 0.38)      bro = rand(0.10, 0.28) * h;   // BR pushed down
-  else if (roll < 0.65) bro = -rand(0.06, 0.18) * h;  // BR raised
-  else                  bro = 0;
-  const blo = Math.random() < 0.45 ? rand(0.04, 0.14) * h : 0;
+  if (broOverride !== undefined) {
+    bro = broOverride * h;
+  } else {
+    const roll = Math.random();
+    if (roll < 0.38)      bro = rand(0.10, 0.28) * h;
+    else if (roll < 0.65) bro = -rand(0.06, 0.18) * h;
+    else                  bro = 0;
+  }
+  const blo = bloOverride !== undefined
+    ? bloOverride * h
+    : (Math.random() < 0.45 ? rand(0.04, 0.14) * h : 0);
   return { blo, bro };
 }
 
@@ -189,6 +220,8 @@ function buildRect(
   topStyle: TopStyle,
   rotation: number,
   baseMag: number,
+  broOverride?: number,
+  bloOverride?: number,
 ): PerspectiveRect {
   const { w, h } = clampAspect(rawW, rawH);
 
@@ -196,7 +229,7 @@ function buildRect(
   const effectiveRotation = (isRightAnchor || topStyle === 'flat') ? 0 : rotation;
 
   const { tlo, tro } = applyTopOffset(mode, h, topStyle, baseMag);
-  const { blo, bro } = applyBottomOffset(mode, h);
+  const { blo, bro } = applyBottomOffset(mode, h, broOverride, bloOverride);
 
   return {
     id: uid(), x, y, w, h, cornerRadius,
@@ -218,22 +251,25 @@ function buildTwoRectLayout(
   rotation0: number, rotation1: number,
   topStyle0: TopStyle, topStyle1: TopStyle,
   baseMag: number,
+  opts?: GenerateOpts,
 ): { rects: PerspectiveRect[]; overlapFrac: number } {
-  const minStagger = 2 * cornerRadius;
+  const minStagger = 4 * cornerRadius;
 
   const w0 = rand(0.60, 0.88) * docWidth;
   const h0 = rand(0.42, 0.62) * docHeight;
   const rect0 = buildRect(
     0, 0, w0, h0, cornerRadius,
     getModeForRect(primaryMode, relation, 0), topStyle0, rotation0, baseMag,
+    opts?.bottomRight0, opts?.bottomLeft0,
   );
 
   const w1 = rand(0.55, 0.85) * docWidth;
   const h1 = h0 * sizeRatio;
-  const xStagger = Math.max(minStagger, rand(0.05, 0.18) * docWidth);
+  const staggerMult = opts?.staggerFrac ?? rand(0.05, 0.18);
+  const xStagger = Math.max(minStagger, staggerMult * docWidth);
   const x1 = staggerRight ? xStagger : -xStagger;
 
-  const overlapFrac = rand(0.50, 0.72);
+  const overlapFrac = opts?.overlapFrac ?? rand(0.50, 0.72);
   let y1 = h0 * overlapFrac;
   const minOverlap = 0.22 * Math.min(h0, h1);
   if ((h0 - y1) < minOverlap) y1 = h0 - minOverlap;
@@ -241,6 +277,7 @@ function buildTwoRectLayout(
   const rect1 = buildRect(
     x1, y1, w1, h1, cornerRadius,
     getModeForRect(primaryMode, relation, 1), topStyle1, rotation1, baseMag,
+    opts?.bottomRight1, opts?.bottomLeft1,
   );
 
   return { rects: [rect0, rect1], overlapFrac };
@@ -257,12 +294,13 @@ function buildThreeRectYCascade(
   rotation0: number, rotation1: number,
   topStyle0: TopStyle, topStyle1: TopStyle,
   baseMag: number,
+  opts?: GenerateOpts,
 ): { rects: PerspectiveRect[]; overlapFrac01: number } {
-  const minStagger = 2 * cornerRadius;
+  const minStagger = 4 * cornerRadius;
   const sr12 = rand(0.70, 0.88);
 
   // ── Height coverage: solve h0 so total Y span ≈ docHeight ──────────────
-  const yOvlpAbs  = rand(0.07, 0.13) * docHeight;
+  const yOvlpAbs  = (opts?.overlapFrac ?? rand(0.07, 0.13)) * docHeight;
   const targetH   = docHeight * rand(0.93, 0.98);
   const h0        = Math.min(Math.max(
     (targetH + 2 * yOvlpAbs) / (1 + sr01 + sr01 * sr12),
@@ -276,24 +314,24 @@ function buildThreeRectYCascade(
   const overlapFrac01 = yOvlp / h0;
 
   // ── Widths: wide enough that after height-constrained scale, X fills too ─
-  // Need: shapeW × (targetH / shapeH) ≥ targetW
-  // → shapeW ≥ shapeH × (docW / docH)
-  // Use generous widths so the X span covers docWidth even at height-scale.
   const w0 = rand(0.72, 0.92) * docWidth;
   const w1 = rand(0.70, 0.90) * docWidth;
   const w2 = rand(0.68, 0.88) * docWidth;
 
   // ── X stagger with guaranteed minimum ────────────────────────────────────
-  const xStagger1 = Math.max(minStagger, rand(0.05, 0.16) * docWidth);
-  const xStagger2 = Math.max(minStagger, rand(0.05, 0.16) * docWidth);
+  const staggerMult1 = opts?.staggerFrac ?? rand(0.05, 0.16);
+  const staggerMult2 = opts?.staggerFrac ?? rand(0.05, 0.16);
+  const xStagger1 = Math.max(minStagger, staggerMult1 * docWidth);
+  const xStagger2 = Math.max(minStagger, staggerMult2 * docWidth);
   const x1 = staggerRight ?  xStagger1 : -xStagger1;
   const x2 = x1 + (staggerRight ? xStagger2 : -xStagger2);
 
-  const topStyle2: TopStyle = Math.random() < 0.40 ? 'flat' : 'angled';
+  const topStyle2: TopStyle = opts?.topStyle2 ?? (Math.random() < 0.40 ? 'flat' : 'angled');
+  const rotation2 = opts?.rotation2 ?? rand(-8, 8);
 
-  const rect0 = buildRect(0,  0,  w0, h0, cornerRadius, getModeForRect(primaryMode, relation, 0), topStyle0, rotation0, baseMag);
-  const rect1 = buildRect(x1, y1, w1, h1, cornerRadius, getModeForRect(primaryMode, relation, 1), topStyle1, rotation1, baseMag);
-  const rect2 = buildRect(x2, y2, w2, h2, cornerRadius, getModeForRect(primaryMode, relation, 2), topStyle2, rand(-8, 8), baseMag);
+  const rect0 = buildRect(0,  0,  w0, h0, cornerRadius, getModeForRect(primaryMode, relation, 0), topStyle0, rotation0, baseMag, opts?.bottomRight0, opts?.bottomLeft0);
+  const rect1 = buildRect(x1, y1, w1, h1, cornerRadius, getModeForRect(primaryMode, relation, 1), topStyle1, rotation1, baseMag, opts?.bottomRight1, opts?.bottomLeft1);
+  const rect2 = buildRect(x2, y2, w2, h2, cornerRadius, getModeForRect(primaryMode, relation, 2), topStyle2, rotation2, baseMag, opts?.bottomRight2, opts?.bottomLeft2);
 
   return { rects: [rect0, rect1, rect2], overlapFrac01 };
 }
@@ -309,12 +347,13 @@ function buildThreeRectXCascade(
   rotation0: number, rotation1: number,
   topStyle0: TopStyle, topStyle1: TopStyle,
   baseMag: number,
+  opts?: GenerateOpts,
 ): { rects: PerspectiveRect[]; overlapFrac01: number } {
-  const minStagger = 2 * cornerRadius;
+  const minStagger = 4 * cornerRadius;
   const sr12 = rand(0.70, 0.88);
 
   // ── Width coverage: solve w0 so total X span ≈ docWidth ──────────────────
-  const xOvlpAbs = rand(0.07, 0.13) * docWidth;
+  const xOvlpAbs = (opts?.overlapFrac ?? rand(0.07, 0.13)) * docWidth;
   const targetW  = docWidth * rand(0.93, 0.98);
   const w0       = Math.min(Math.max(
     (targetW + 2 * xOvlpAbs) / (1 + sr01 + sr01 * sr12),
@@ -334,16 +373,19 @@ function buildThreeRectXCascade(
 
   // ── Y stagger with guaranteed minimum ────────────────────────────────────
   const staggerDown = Math.random() < 0.5;
-  const yStagger1 = Math.max(minStagger, rand(0.06, 0.15) * docHeight);
-  const yStagger2 = Math.max(minStagger, rand(0.03, 0.09) * docHeight);
+  const staggerMult1 = opts?.staggerFrac ?? rand(0.06, 0.15);
+  const staggerMult2 = opts?.staggerFrac ?? rand(0.03, 0.09);
+  const yStagger1 = Math.max(minStagger, staggerMult1 * docHeight);
+  const yStagger2 = Math.max(minStagger, staggerMult2 * docHeight);
   const y1 = staggerDown ? yStagger1 : -yStagger1;
   const y2 = y1 + (staggerDown ? yStagger2 : -yStagger2);
 
-  const topStyle2: TopStyle = Math.random() < 0.40 ? 'flat' : 'angled';
+  const topStyle2: TopStyle = opts?.topStyle2 ?? (Math.random() < 0.40 ? 'flat' : 'angled');
+  const rotation2 = opts?.rotation2 ?? rand(-8, 8);
 
-  const rect0 = buildRect(0,  0,  w0, h0, cornerRadius, getModeForRect(primaryMode, relation, 0), topStyle0, rotation0, baseMag);
-  const rect1 = buildRect(x1, y1, w1, h1, cornerRadius, getModeForRect(primaryMode, relation, 1), topStyle1, rotation1, baseMag);
-  const rect2 = buildRect(x2, y2, w2, h2, cornerRadius, getModeForRect(primaryMode, relation, 2), topStyle2, rand(-8, 8), baseMag);
+  const rect0 = buildRect(0,  0,  w0, h0, cornerRadius, getModeForRect(primaryMode, relation, 0), topStyle0, rotation0, baseMag, opts?.bottomRight0, opts?.bottomLeft0);
+  const rect1 = buildRect(x1, y1, w1, h1, cornerRadius, getModeForRect(primaryMode, relation, 1), topStyle1, rotation1, baseMag, opts?.bottomRight1, opts?.bottomLeft1);
+  const rect2 = buildRect(x2, y2, w2, h2, cornerRadius, getModeForRect(primaryMode, relation, 2), topStyle2, rotation2, baseMag, opts?.bottomRight2, opts?.bottomLeft2);
 
   return { rects: [rect0, rect1, rect2], overlapFrac01 };
 }
@@ -358,7 +400,7 @@ export function generateCompoundShape(
   opts?: GenerateOpts,
   canvasAspect?: CanvasAspect,
 ): { shape: CompoundShape; meta: ShapeGenerationMeta } {
-  const cornerRadius = 0.04 * Math.min(docWidth, docHeight);
+  const cornerRadius = (opts?.cornerRadiusMult ?? 0.02) * Math.min(docWidth, docHeight);
 
   const randomModes: DistortionMode[] = ['lean-right', 'lean-left', 'both-deep', 'right-anchor'];
   const primaryMode: DistortionMode =
@@ -394,7 +436,7 @@ export function generateCompoundShape(
       : (opts?.topStyle1 ?? (Math.random() < 0.40 ? 'flat' : 'angled'));
 
   // Shared distortion magnitude — keeps rects "brothers and sisters"
-  const baseMag = rand(0.22, 0.38);
+  const baseMag = opts?.baseMag ?? rand(0.22, 0.38);
 
   // ── Build rects ────────────────────────────────────────────────────────────
   let rects: PerspectiveRect[];
@@ -406,6 +448,7 @@ export function generateCompoundShape(
         docWidth, docHeight, cornerRadius,
         primaryMode, relation, sizeRatio,
         rotation0, rotation1, topStyle0, topStyle1, baseMag,
+        opts,
       );
       rects = r.rects; overlapFrac = r.overlapFrac01;
     } else {
@@ -413,6 +456,7 @@ export function generateCompoundShape(
         docWidth, docHeight, cornerRadius,
         primaryMode, relation, staggerRight, sizeRatio,
         rotation0, rotation1, topStyle0, topStyle1, baseMag,
+        opts,
       );
       rects = r.rects; overlapFrac = r.overlapFrac01;
     }
@@ -421,6 +465,7 @@ export function generateCompoundShape(
       docWidth, docHeight, cornerRadius,
       primaryMode, relation, staggerRight, sizeRatio,
       rotation0, rotation1, topStyle0, topStyle1, baseMag,
+      opts,
     );
     rects = r.rects; overlapFrac = r.overlapFrac;
   }
@@ -451,6 +496,25 @@ export function generateCompoundShape(
     // cornerRadius: canvas-relative — NOT scaled
   }
 
+  // ── Diagnostic: stagger distances (post-scale, between adjacent rect pairs) ─
+  // X-cascade uses Y-stagger; everything else uses X-stagger.
+  const isXCascade = rectCountActual === 3 && canvasAspect === 'wide';
+  const staggers: number[] = [
+    isXCascade
+      ? Math.abs(rects[1]!.y - rects[0]!.y)
+      : Math.abs(rects[1]!.x - rects[0]!.x),
+  ];
+  if (rectCountActual === 3) {
+    staggers.push(
+      isXCascade
+        ? Math.abs(rects[2]!.y - rects[1]!.y)
+        : Math.abs(rects[2]!.x - rects[1]!.x),
+    );
+  }
+  const minStaggerVal = Math.min(...staggers);
+  const minEstInLen     = minStaggerVal - cornerRadius * 1.52;
+  const minEstPullback  = Math.min(cornerRadius * 1.52, Math.max(0, minEstInLen) * 0.49);
+
   // ── Overlap metrics (axis-aligned, post-scale, r0 vs r1) ──────────────────
   const r0 = rects[0]!;
   const r1 = rects[1]!;
@@ -475,6 +539,10 @@ export function generateCompoundShape(
     xOverlapPct:    minW > 0    ? xOvW / minW    : 0,
     yOverlapAbsPct: minH > 0    ? yOvH / minH    : 0,
     overlapAreaPct: smArea > 0  ? (xOvW * yOvH) / smArea : 0,
+    staggers,
+    cornerRadiusPx: cornerRadius,
+    minEstInLen,
+    minEstPullback,
   };
 
   return {
