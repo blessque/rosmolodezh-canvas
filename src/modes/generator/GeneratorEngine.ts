@@ -2,14 +2,16 @@ import type { CompoundShape, PerspectiveRect, TopStyle } from '@/types/scene';
 import { uid } from '@/utils/uid';
 
 /**
- * GeneratorEngine v4.2
+ * GeneratorEngine v4.4
  *
- * Fixes vs v4.1:
- *   - Portrait Y-cascade widths widened (0.72–0.92) to fill horizontal space
- *   - Aspect ratio clamped to 1.75:1 max — no more "sticks"
- *   - Minimum stagger enforced at 2×cornerRadius — no near-coincident edges
- *   - New DistortionMode 'right-anchor': top+left sides orthogonal,
- *     only bottom-right corner skewed (brand identity trapezoid)
+ * Changes vs v4.2:
+ *   - Modes pruned to lean-right / lean-left only (both-deep and right-anchor removed)
+ *   - cornerRadius multiplier reduced to 0.015 (was 0.02)
+ *   - Distortion depth range widened to 0.20–0.45 (was 0.22–0.38)
+ *   - All portrait/square canvases use Y-cascade; all landscape → X-cascade
+ *   - defaultRectCount always returns 3
+ *   - flat topStyle guarantees a non-zero bottom corner (no boring rectangles)
+ *   - Stagger multiplier ranges increased (Y-cascade 0.08–0.20, X-cascade 0.08–0.18)
  */
 
 // ---------------------------------------------------------------------------
@@ -18,9 +20,7 @@ import { uid } from '@/utils/uid';
 
 export type DistortionMode =
   | 'lean-right'    // TL flat, TR raised
-  | 'lean-left'     // TL raised, TR flat
-  | 'both-deep'     // both raised, independent magnitudes
-  | 'right-anchor'; // flat top+left, only BR pushed down — brand trapezoid
+  | 'lean-left';    // TL raised, TR flat
 
 export type CanvasAspect = 'square' | 'wide' | 'portrait' | 'portrait-4-5';
 
@@ -101,7 +101,7 @@ function clampAspect(w: number, h: number, maxRatio = 1.75): { w: number; h: num
  * Top-edge distortion.
  * baseMag is shared for the whole compound shape (brother-sister consistency).
  * Per-rect variation ±12%.
- * 'flat' and 'right-anchor' modes always return zero (no top displacement).
+ * 'flat' topStyle always returns zero top displacement.
  */
 function applyTopOffset(
   mode: DistortionMode,
@@ -109,32 +109,31 @@ function applyTopOffset(
   topStyle: TopStyle,
   baseMag: number,
 ): { tlo: number; tro: number } {
-  if (topStyle === 'flat' || mode === 'right-anchor') return { tlo: 0, tro: 0 };
+  if (topStyle === 'flat') return { tlo: 0, tro: 0 };
   const mag = baseMag * rand(0.88, 1.12);
-  switch (mode) {
-    case 'lean-right': return { tlo: 0, tro: -mag * h };
-    case 'lean-left':  return { tlo: -mag * h, tro: 0 };
-    case 'both-deep':  return { tlo: -mag * rand(0.88, 1.12) * h, tro: -mag * h };
-  }
+  if (mode === 'lean-right') return { tlo: 0, tro: -mag * h };
+  /* lean-left */             return { tlo: -mag * h, tro: 0 };
 }
 
 /**
  * Bottom-edge distortion — brand-identity.
- * 'right-anchor' mode always returns blo=0 and a significant bro.
+ * When topStyle is 'flat', guarantees a distinctive bottom corner (never a boring rectangle).
  * broOverride/bloOverride are fractions of h (not pre-multiplied).
  */
 function applyBottomOffset(
-  mode: DistortionMode,
   h: number,
+  topStyle: TopStyle,
   broOverride?: number,
   bloOverride?: number,
 ): { blo: number; bro: number } {
-  if (mode === 'right-anchor') {
-    return { blo: 0, bro: (broOverride ?? rand(0.20, 0.48)) * h };
-  }
   let bro: number;
   if (broOverride !== undefined) {
     bro = broOverride * h;
+  } else if (topStyle === 'flat') {
+    // flat top → guarantee distinctive bottom-right corner (never boring)
+    bro = Math.random() < 0.6
+      ? rand(0.18, 0.45) * h    // pushed down (60%)
+      : -rand(0.10, 0.28) * h;  // raised (40%)
   } else {
     const roll = Math.random();
     if (roll < 0.38)      bro = rand(0.10, 0.28) * h;
@@ -149,7 +148,6 @@ function applyBottomOffset(
 
 /**
  * Symmetry: odd-indexed rects may get the opposite lean direction.
- * 'both-deep' and 'right-anchor' have no natural opposite — return same.
  */
 function getModeForRect(
   primary: DistortionMode,
@@ -157,15 +155,13 @@ function getModeForRect(
   rectIndex: number,
 ): DistortionMode {
   if (relation === 'same' || rectIndex === 0) return primary;
-  if (primary === 'lean-right') return 'lean-left';
-  if (primary === 'lean-left')  return 'lean-right';
-  return primary;
+  return primary === 'lean-right' ? 'lean-left' : 'lean-right';
 }
 
 function defaultRectCount(canvas: CanvasAspect | undefined): 2 | 3 {
-  if (canvas === 'wide' || canvas === 'portrait') return 3;
-  if (canvas === 'portrait-4-5') return Math.random() < 0.40 ? 3 : 2;
-  return 2;
+  if (canvas === 'square')       return Math.random() < 0.75 ? 2 : 3;
+  if (canvas === 'portrait-4-5') return Math.random() < 0.25 ? 2 : 3;
+  return 3;
 }
 
 function rotateCorner(
@@ -207,8 +203,7 @@ function computeBoundingBox(rects: PerspectiveRect[]): {
 
 /**
  * Build a single PerspectiveRect applying all style rules:
- *  - right-anchor: tlo=tro=blo=rotation=0, bro=large
- *  - flat: tlo=tro=0, rotation=0
+ *  - flat: tlo=tro=0, rotation=0, guaranteed non-zero bro
  *  - angled: use applyTopOffset with baseMag
  * Aspect ratio is clamped before building.
  */
@@ -224,19 +219,15 @@ function buildRect(
   bloOverride?: number,
 ): PerspectiveRect {
   const { w, h } = clampAspect(rawW, rawH);
-
-  const isRightAnchor = mode === 'right-anchor';
-  const effectiveRotation = (isRightAnchor || topStyle === 'flat') ? 0 : rotation;
-
+  const effectiveRotation = topStyle === 'flat' ? 0 : rotation;
   const { tlo, tro } = applyTopOffset(mode, h, topStyle, baseMag);
-  const { blo, bro } = applyBottomOffset(mode, h, broOverride, bloOverride);
-
+  const { blo, bro } = applyBottomOffset(h, topStyle, broOverride, bloOverride);
   return {
     id: uid(), x, y, w, h, cornerRadius,
     topLeftOffset: tlo, topRightOffset: tro,
     bottomRightOffset: bro, bottomLeftOffset: blo,
     rotation: effectiveRotation,
-    topStyle: isRightAnchor ? 'flat' : topStyle,
+    topStyle,
   };
 }
 
@@ -319,8 +310,8 @@ function buildThreeRectYCascade(
   const w2 = rand(0.68, 0.88) * docWidth;
 
   // ── X stagger with guaranteed minimum ────────────────────────────────────
-  const staggerMult1 = opts?.staggerFrac ?? rand(0.05, 0.16);
-  const staggerMult2 = opts?.staggerFrac ?? rand(0.05, 0.16);
+  const staggerMult1 = opts?.staggerFrac ?? rand(0.08, 0.20);
+  const staggerMult2 = opts?.staggerFrac ?? rand(0.08, 0.20);
   const xStagger1 = Math.max(minStagger, staggerMult1 * docWidth);
   const xStagger2 = Math.max(minStagger, staggerMult2 * docWidth);
   const x1 = staggerRight ?  xStagger1 : -xStagger1;
@@ -372,13 +363,14 @@ function buildThreeRectXCascade(
   const h2 = rand(0.46, 0.68) * docHeight;
 
   // ── Y stagger with guaranteed minimum ────────────────────────────────────
-  const staggerDown = Math.random() < 0.5;
-  const staggerMult1 = opts?.staggerFrac ?? rand(0.06, 0.15);
-  const staggerMult2 = opts?.staggerFrac ?? rand(0.03, 0.09);
+  const staggerDown1 = Math.random() < 0.5;
+  const staggerDown2 = Math.random() < 0.5;
+  const staggerMult1 = opts?.staggerFrac ?? rand(0.08, 0.18);
+  const staggerMult2 = opts?.staggerFrac ?? rand(0.08, 0.18);
   const yStagger1 = Math.max(minStagger, staggerMult1 * docHeight);
   const yStagger2 = Math.max(minStagger, staggerMult2 * docHeight);
-  const y1 = staggerDown ? yStagger1 : -yStagger1;
-  const y2 = y1 + (staggerDown ? yStagger2 : -yStagger2);
+  const y1 = staggerDown1 ? yStagger1 : -yStagger1;
+  const y2 = y1 + (staggerDown2 ? yStagger2 : -yStagger2);
 
   const topStyle2: TopStyle = opts?.topStyle2 ?? (Math.random() < 0.40 ? 'flat' : 'angled');
   const rotation2 = opts?.rotation2 ?? rand(-8, 8);
@@ -400,43 +392,29 @@ export function generateCompoundShape(
   opts?: GenerateOpts,
   canvasAspect?: CanvasAspect,
 ): { shape: CompoundShape; meta: ShapeGenerationMeta } {
-  const cornerRadius = (opts?.cornerRadiusMult ?? 0.02) * Math.min(docWidth, docHeight);
+  const cornerRadius = (opts?.cornerRadiusMult ?? 0.015) * Math.min(docWidth, docHeight);
 
-  const randomModes: DistortionMode[] = ['lean-right', 'lean-left', 'both-deep', 'right-anchor'];
+  const randomModes: DistortionMode[] = ['lean-right', 'lean-left'];
   const primaryMode: DistortionMode =
-    opts?.forcedMode ?? randomModes[Math.floor(Math.random() * randomModes.length)]!;
+    opts?.forcedMode ?? randomModes[Math.floor(Math.random() * 2)]!;
 
-  // right-anchor has no logical opposite; force 'same' to avoid misleading export data
   const relation: 'same' | 'opposite' =
-    primaryMode === 'right-anchor'
-      ? 'same'
-      : (opts?.relation ?? (Math.random() < 0.5 ? 'same' : 'opposite'));
+    opts?.relation ?? (Math.random() < 0.5 ? 'same' : 'opposite');
 
   const rectCountActual: 2 | 3 = opts?.rectCount ?? defaultRectCount(canvasAspect);
 
-  const staggerRight =
-    primaryMode === 'lean-left'    ? true            // expose rect[0]'s raised LEFT edge
-    : primaryMode === 'lean-right' || primaryMode === 'right-anchor'
-      ? false                                        // expose rect[0]'s distorted RIGHT edge
-      : Math.random() < 0.5;                        // both-deep: either direction
+  const staggerRight = primaryMode === 'lean-left'; // expose rect[0]'s raised LEFT edge
 
   const sizeRatio = opts?.sizeRatio ?? (rectCountActual === 3 ? rand(0.70, 0.88) : rand(0.57, 0.85));
 
   const rotation0 = opts?.rotation0 ?? rand(-8, 8);
   const rotation1 = opts?.rotation1 ?? rand(-8, 8);
 
-  // right-anchor always has flat top — honour explicit opts otherwise
-  const topStyle0: TopStyle =
-    primaryMode === 'right-anchor'
-      ? 'flat'
-      : (opts?.topStyle0 ?? (Math.random() < 0.40 ? 'flat' : 'angled'));
-  const topStyle1: TopStyle =
-    primaryMode === 'right-anchor'
-      ? 'flat'
-      : (opts?.topStyle1 ?? (Math.random() < 0.40 ? 'flat' : 'angled'));
+  const topStyle0: TopStyle = opts?.topStyle0 ?? (Math.random() < 0.40 ? 'flat' : 'angled');
+  const topStyle1: TopStyle = opts?.topStyle1 ?? (Math.random() < 0.40 ? 'flat' : 'angled');
 
   // Shared distortion magnitude — keeps rects "brothers and sisters"
-  const baseMag = opts?.baseMag ?? rand(0.22, 0.38);
+  const baseMag = opts?.baseMag ?? rand(0.20, 0.45);
 
   // ── Build rects ────────────────────────────────────────────────────────────
   let rects: PerspectiveRect[];

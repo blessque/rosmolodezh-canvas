@@ -1,11 +1,12 @@
 import { useUIStore } from '@/store/uiStore';
 
 const SIZES = [
-  { label: '1:1',  w: 1080, h: 1080 },
-  { label: '16:9', w: 1920, h: 1080 },
-  { label: '9:16', w: 1080, h: 1920 },
-  { label: '4:5',  w: 1080, h: 1350 },
-  { label: '3:4',  w: 1080, h: 1440 },
+  { label: '4:5',    w: 1080, h: 1350 },
+  { label: '16:9',   w: 1920, h: 1080 },
+  { label: '9:16',   w: 1080, h: 1920 },
+  { label: 'A3 P',   w: 1240, h: 1754 },
+  { label: 'A3 L',   w: 1754, h: 1240 },
+  { label: '1:1',    w: 1080, h: 1080 },
 ] as const;
 
 function radius(i: number, total: number) {
@@ -31,8 +32,8 @@ export function CanvasSizeSelector() {
               'flex items-center justify-between p-[10px] transition-colors',
               radius(i, SIZES.length),
               active
-                ? 'bg-[#33373f] text-white'
-                : 'bg-[#202226] text-[#777e8c] hover:bg-[#2a2e35] hover:text-[#9ca3b1]',
+                ? 'bg-white text-[#0e0f11]'
+                : 'bg-[#ECEEF3] text-[#6B7280] hover:bg-[#E0E2E8] hover:text-[#0e0f11]',
             ].join(' ')}
           >
             <span className="font-mono text-[14px] shrink-0">{label}</span>

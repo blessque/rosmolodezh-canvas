@@ -140,7 +140,7 @@ function roundConcaveJunctions(pathItem: paper.PathItem, r: number): void {
 function roundConcavePath(path: paper.Path, r: number): void {
   const segs = path.segments;
   const n = segs.length;
-  const eps = 1; // doc-unit threshold for "near-zero handle"
+  const eps = 3; // doc-unit threshold for "near-zero handle"
 
   const newSegs: paper.Segment[] = [];
 
@@ -152,49 +152,131 @@ function roundConcavePath(path: paper.Path, r: number): void {
     const hiLen = Math.sqrt(curr.handleIn.x ** 2 + curr.handleIn.y ** 2);
     const hoLen = Math.sqrt(curr.handleOut.x ** 2 + curr.handleOut.y ** 2);
 
-    if (hiLen < eps && hoLen < eps) {
-      // Junction vertex candidate — check concavity via cross product
-      const inX = curr.point.x - prev.point.x;
-      const inY = curr.point.y - prev.point.y;
-      const outX = next.point.x - curr.point.x;
-      const outY = next.point.y - curr.point.y;
+    // arc-split cases: unite() subdivides a bezier arc at the intersection,
+    // leaving one non-zero handle and one zero handle at the junction vertex.
+    const arcIn  = hiLen > eps && hoLen < eps; // arc arriving, straight departing
+    const arcOut = hiLen < eps && hoLen > eps; // straight arriving, arc departing
+    const bothStraight = hiLen < eps && hoLen < eps;
+
+    if (bothStraight || arcIn || arcOut) {
+      let inX: number, inY: number;
+      let outX: number, outY: number;
+
+      if (arcIn) {
+        // Arc tangent at end of incoming bezier: derivative at t=1 = P3 - P2 = -handleIn
+        inX = -curr.handleIn.x;
+        inY = -curr.handleIn.y;
+        outX = next.point.x - curr.point.x;
+        outY = next.point.y - curr.point.y;
+      } else if (arcOut) {
+        // Straight arrives, arc departs: tangent at t=0 = handleOut direction
+        inX = curr.point.x - prev.point.x;
+        inY = curr.point.y - prev.point.y;
+        outX = curr.handleOut.x;
+        outY = curr.handleOut.y;
+      } else {
+        // Both straight — use bezier control-point tangent for adjacent arc segments
+        const prevHoLen = Math.sqrt(prev.handleOut.x ** 2 + prev.handleOut.y ** 2);
+        if (prevHoLen > eps) {
+          inX = curr.point.x - (prev.point.x + prev.handleOut.x);
+          inY = curr.point.y - (prev.point.y + prev.handleOut.y);
+        } else {
+          inX = curr.point.x - prev.point.x;
+          inY = curr.point.y - prev.point.y;
+        }
+
+        const nextHiLen = Math.sqrt(next.handleIn.x ** 2 + next.handleIn.y ** 2);
+        if (nextHiLen > eps) {
+          outX = (next.point.x + next.handleIn.x) - curr.point.x;
+          outY = (next.point.y + next.handleIn.y) - curr.point.y;
+        } else {
+          outX = next.point.x - curr.point.x;
+          outY = next.point.y - curr.point.y;
+        }
+      }
 
       const cross = inX * outY - inY * outX; // negative → concave (CW path, y-down)
 
       if (cross < -1e-6) {
-        const inLen  = Math.sqrt(inX * inX + inY * inY);
-        const outLen = Math.sqrt(outX * outX + outY * outY);
-        if (inLen < 1e-10 || outLen < 1e-10) { newSegs.push(curr); continue; }
+        // Chord lengths for pullback computation (conservative, prevents overshoot)
+        const inLen  = Math.sqrt(
+          (curr.point.x - prev.point.x) ** 2 + (curr.point.y - prev.point.y) ** 2,
+        );
+        const outLen = Math.sqrt(
+          (next.point.x - curr.point.x) ** 2 + (next.point.y - curr.point.y) ** 2,
+        );
 
-        const inNx = inX / inLen;    const inNy = inY / inLen;
-        const outNx = outX / outLen; const outNy = outY / outLen;
+        const inMag  = Math.sqrt(inX * inX + inY * inY);
+        const outMag = Math.sqrt(outX * outX + outY * outY);
+        if (inMag < 1e-10 || outMag < 1e-10) { newSegs.push(curr); continue; }
 
-        const pullback  = Math.min(r * 1.52, (inLen + outLen) / 2);
+        const inNx  = inX  / inMag;
+        const inNy  = inY  / inMag;
+        const outNx = outX / outMag;
+        const outNy = outY / outMag;
         const handleLen = r * 0.89;
 
-        // Arriving tangent point (pulled back from junction toward prev)
-        const tpIn = new paper.Point(
-          curr.point.x - inNx * pullback,
-          curr.point.y - inNy * pullback,
-        );
-        // Departing tangent point (moved forward from junction toward next)
-        const tpOut = new paper.Point(
-          curr.point.x + outNx * pullback,
-          curr.point.y + outNy * pullback,
-        );
-
-        // Handles point toward the junction apex (same convention as buildRectPath)
-        newSegs.push(new paper.Segment(
-          tpIn,
-          new paper.Point(0, 0),
-          new paper.Point(inNx * handleLen, inNy * handleLen),
-        ));
-        newSegs.push(new paper.Segment(
-          tpOut,
-          new paper.Point(-outNx * handleLen, -outNy * handleLen),
-          new paper.Point(0, 0),
-        ));
-        continue; // replaced curr with two fillet segments
+        if (arcIn) {
+          // Cannot pull back into the arc — zero pullback on arc side.
+          // C1 blend: keep handleIn intact, set handleOut along arc tangent.
+          const pullback = Math.min(r * 1.52, outLen * 0.49);
+          if (outLen < 1e-10) { newSegs.push(curr); continue; }
+          const tpOut = new paper.Point(
+            curr.point.x + outNx * pullback,
+            curr.point.y + outNy * pullback,
+          );
+          newSegs.push(new paper.Segment(
+            curr.point,
+            curr.handleIn,                                              // preserve arc
+            new paper.Point(inNx * handleLen, inNy * handleLen),       // C1 with arc
+          ));
+          newSegs.push(new paper.Segment(
+            tpOut,
+            new paper.Point(-outNx * handleLen, -outNy * handleLen),
+            new paper.Point(0, 0),
+          ));
+        } else if (arcOut) {
+          // Cannot pull forward into the arc — zero pullback on arc side.
+          const pullback = Math.min(r * 1.52, inLen * 0.49);
+          if (inLen < 1e-10) { newSegs.push(curr); continue; }
+          const tpIn = new paper.Point(
+            curr.point.x - inNx * pullback,
+            curr.point.y - inNy * pullback,
+          );
+          newSegs.push(new paper.Segment(
+            tpIn,
+            new paper.Point(0, 0),
+            new paper.Point(inNx * handleLen, inNy * handleLen),
+          ));
+          newSegs.push(new paper.Segment(
+            curr.point,
+            new paper.Point(-outNx * handleLen, -outNy * handleLen),   // C1 with arc
+            curr.handleOut,                                             // preserve arc
+          ));
+        } else {
+          // Both straight: symmetric fillet
+          if (inLen < 1e-10 || outLen < 1e-10) { newSegs.push(curr); continue; }
+          const pullback = Math.min(r * 1.52, inLen * 0.49, outLen * 0.49);
+          const tpIn = new paper.Point(
+            curr.point.x - inNx * pullback,
+            curr.point.y - inNy * pullback,
+          );
+          const tpOut = new paper.Point(
+            curr.point.x + outNx * pullback,
+            curr.point.y + outNy * pullback,
+          );
+          newSegs.push(new paper.Segment(
+            tpIn,
+            new paper.Point(0, 0),
+            new paper.Point(inNx * handleLen, inNy * handleLen),
+          ));
+          newSegs.push(new paper.Segment(
+            tpOut,
+            new paper.Point(-outNx * handleLen, -outNy * handleLen),
+            new paper.Point(0, 0),
+          ));
+        }
+        continue; // replaced curr with fillet segments
       }
     }
 

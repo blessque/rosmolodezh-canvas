@@ -32,12 +32,12 @@ export const useUIStore = create<UIStoreState>((set) => ({
     panX: 0,
     panY: 0,
     documentWidth: 1080,
-    documentHeight: 1080,
+    documentHeight: 1350,
     canvasWidth: 0,
     canvasHeight: 0,
   },
-  canvasColor: '#0E0F11',
-  shapeColor: '#FFFFFF',
+  canvasColor: '#FFFFFF',
+  shapeColor:  '#99ECFF',
 
   setMode: (mode) => set({ mode }),
 

@@ -4,9 +4,12 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        // TODO: swap to brand font
-        sans: ['Inter', 'sans-serif'],
-        mono: ['Inter', 'monospace'],
+        sans:           ['"ALSHaussNext"',     'sans-serif'],
+        mono:           ['"ALSHaussMono"',     'monospace'],
+        'cond':         ['"ALSHaussNextCond"', 'sans-serif'],
+        'cond-regular': ['"ALSHaussNextCond"', 'sans-serif'],
+        'cond-black':   ['"ALSHaussNextCond"', 'sans-serif'],
+        'mono-book':    ['"ALSHaussMonoBook"', 'monospace'],
       },
       colors: {
         surface: {

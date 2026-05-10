@@ -32,7 +32,7 @@ interface DevState {
 
 const DEFAULTS: DevState = {
   mode: 'lean-right',
-  rectCount: 2,
+  rectCount: 3,
   relation: 'same',
   topStyle0: 'angled',
   topStyle1: 'angled',
@@ -40,11 +40,11 @@ const DEFAULTS: DevState = {
   rotation0: 0,
   rotation1: 0,
   rotation2: 0,
-  baseMag: 0.30,
+  baseMag: 0.32,
   sizeRatio: 0.72,
-  cornerRadiusMult: 0.02,
+  cornerRadiusMult: 0.015,
   overlapFrac: 0.10,
-  staggerFrac: 0.10,
+  staggerFrac: 0.12,
   bottomRight0: 0,
   bottomLeft0: 0,
   bottomRight1: 0,
@@ -87,7 +87,6 @@ export function DevPanel({ onChange }: DevPanelProps) {
     onChange(stateToOpts(next));
   }
 
-  const isRightAnchor = s.mode === 'right-anchor';
   const show3 = s.rectCount === 3;
 
   function BtnGroup({
@@ -133,8 +132,8 @@ export function DevPanel({ onChange }: DevPanelProps) {
       <BtnGroup
         label="Mode"
         value={s.mode}
-        options={['lean-right', 'lean-left', 'both-deep', 'right-anchor']}
-        onSelect={(v) => update({ mode: v as DistortionMode, relation: v === 'right-anchor' ? 'same' : s.relation })}
+        options={['lean-right', 'lean-left']}
+        onSelect={(v) => update({ mode: v as DistortionMode })}
       />
       <BtnGroup
         label="Rect count"
@@ -147,7 +146,6 @@ export function DevPanel({ onChange }: DevPanelProps) {
         value={s.relation}
         options={['same', 'opposite']}
         onSelect={(v) => update({ relation: v as 'same' | 'opposite' })}
-        disabled={isRightAnchor}
       />
 
       {/* ── Size & layout ──────────────────────────────────── */}
@@ -167,7 +165,7 @@ export function DevPanel({ onChange }: DevPanelProps) {
       {/* ── Rect 0 ─────────────────────────────────────────── */}
       <p className="text-white/40 uppercase tracking-wider font-medium mt-2">Rect 0</p>
       <BtnGroup label="Top style" value={s.topStyle0} options={['flat', 'angled']}
-        onSelect={(v) => update({ topStyle0: v as TopStyle })} disabled={isRightAnchor} />
+        onSelect={(v) => update({ topStyle0: v as TopStyle })} />
       <Slider label="Rotation" value={s.rotation0} min={-12} max={12} step={0.5}
         onChange={(v) => update({ rotation0: v })} formatValue={(v) => `${v}°`} />
       <Slider label="Bottom-right offset" value={s.bottomRight0} min={-0.25} max={0.55} step={0.01}
@@ -178,7 +176,7 @@ export function DevPanel({ onChange }: DevPanelProps) {
       {/* ── Rect 1 ─────────────────────────────────────────── */}
       <p className="text-white/40 uppercase tracking-wider font-medium mt-2">Rect 1</p>
       <BtnGroup label="Top style" value={s.topStyle1} options={['flat', 'angled']}
-        onSelect={(v) => update({ topStyle1: v as TopStyle })} disabled={isRightAnchor} />
+        onSelect={(v) => update({ topStyle1: v as TopStyle })} />
       <Slider label="Rotation" value={s.rotation1} min={-12} max={12} step={0.5}
         onChange={(v) => update({ rotation1: v })} formatValue={(v) => `${v}°`} />
       <Slider label="Bottom-right offset" value={s.bottomRight1} min={-0.25} max={0.55} step={0.01}
@@ -191,7 +189,7 @@ export function DevPanel({ onChange }: DevPanelProps) {
         <>
           <p className="text-white/40 uppercase tracking-wider font-medium mt-2">Rect 2</p>
           <BtnGroup label="Top style" value={s.topStyle2} options={['flat', 'angled']}
-            onSelect={(v) => update({ topStyle2: v as TopStyle })} disabled={isRightAnchor} />
+            onSelect={(v) => update({ topStyle2: v as TopStyle })} />
           <Slider label="Rotation" value={s.rotation2} min={-12} max={12} step={0.5}
             onChange={(v) => update({ rotation2: v })} formatValue={(v) => `${v}°`} />
           <Slider label="Bottom-right offset" value={s.bottomRight2} min={-0.25} max={0.55} step={0.01}

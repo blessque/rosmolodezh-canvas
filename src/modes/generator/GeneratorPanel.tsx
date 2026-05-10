@@ -20,10 +20,10 @@ export function GeneratorPanel() {
   function getCanvasAspect(): CanvasAspect {
     const { documentWidth: w, documentHeight: h } = viewport;
     const ratio = w / h;
-    return ratio >= 1.5   ? 'wide'
-         : ratio <= 0.60  ? 'portrait'
-         : ratio <= 0.85  ? 'portrait-4-5'
-         : 'square';
+    return ratio > 1.0    ? 'wide'           // landscape (incl. A3 L at 1.415)
+         : ratio <= 0.60  ? 'portrait'        // 9:16
+         : ratio <= 0.85  ? 'portrait-4-5'   // 4:5, A3 P (0.707)
+         : 'square';                          // 1:1
   }
 
   function handleRegenerate() {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { CompoundShape } from '@/types/scene';
-import type { ViewportState } from '@/store/uiStore';
+import { useUIStore, type ViewportState } from '@/store/uiStore';
 import { renderCompound } from '@/canvas/compoundRenderer';
 import { generateCompoundShape } from '@/modes/generator/GeneratorEngine';
 import type { CanvasAspect, DistortionMode, ShapeGenerationMeta, TopStyle } from '@/modes/generator/GeneratorEngine';
@@ -25,8 +25,10 @@ interface GalleryItem {
 // ---------------------------------------------------------------------------
 
 const GALLERY_SIZE = 500;
+const DIAG_SIZE    = 100;
 const CHUNK_SIZE   = 8;
 const THUMB_W      = 120;
+const DIAG_THUMB_W = 360;
 
 const CANVAS_SIZES: Record<CanvasAspect, { w: number; h: number }> = {
   square:         { w: 1080, h: 1080 },
@@ -35,14 +37,14 @@ const CANVAS_SIZES: Record<CanvasAspect, { w: number; h: number }> = {
   'portrait-4-5': { w: 1080, h: 1350 },
 };
 
-function thumbSize(canvas: CanvasAspect): { tw: number; th: number } {
+function thumbSize(canvas: CanvasAspect, thumbW = THUMB_W): { tw: number; th: number } {
   const { w, h } = CANVAS_SIZES[canvas];
-  return { tw: THUMB_W, th: Math.round(THUMB_W * h / w) };
+  return { tw: thumbW, th: Math.round(thumbW * h / w) };
 }
 
-function makeViewport(canvas: CanvasAspect): ViewportState {
+function makeViewport(canvas: CanvasAspect, thumbW = THUMB_W): ViewportState {
   const { w, h } = CANVAS_SIZES[canvas];
-  const { tw, th } = thumbSize(canvas);
+  const { tw, th } = thumbSize(canvas, thumbW);
   return { zoom: 1, panX: 0, panY: 0, documentWidth: w, documentHeight: h, canvasWidth: tw, canvasHeight: th };
 }
 
@@ -55,20 +57,13 @@ function buildGalleryItems(): GalleryItem[] {
 
   // ── Systematic sweep ──────────────────────────────────────────────────────
   //
-  // Part A: lean-right / lean-left / both-deep × 4 canvases × 2 sizeRatios
-  //         × 2 topStyle combos × 2 relations = 96 shapes
-  //
-  // Part B: right-anchor × 4 canvases × 2 sizeRatios × 2 relations = 16 shapes
-  //         (topStyle is always flat for right-anchor; no separate topStyle sweep)
-  //
-  // Total sweep: 112 shapes
-  // Random fill: 388 shapes (→ grand total 500)
+  // 2 modes × 4 canvases × 2 sizeRatios × 2 topStyle combos × 2 relations = 64 shapes
+  // Random fill: 436 shapes (→ grand total 500)
 
   const canvases: CanvasAspect[]   = ['square', 'wide', 'portrait', 'portrait-4-5'];
   const sizeRatios                 = [0.65, 0.82];
 
-  // Part A
-  const leanModes: DistortionMode[]          = ['lean-right', 'lean-left', 'both-deep'];
+  const leanModes: DistortionMode[]          = ['lean-right', 'lean-left'];
   const topStyleCombos: [TopStyle, TopStyle][] = [['angled', 'angled'], ['flat', 'flat']];
   const relations: Array<'same' | 'opposite'> = ['same', 'opposite'];
 
@@ -89,29 +84,15 @@ function buildGalleryItems(): GalleryItem[] {
     }
   }
 
-  // Part B — right-anchor (relation always 'same' for this mode)
-  for (const canvas of canvases) {
-    const { w, h } = CANVAS_SIZES[canvas];
-    for (const sr of sizeRatios) {
-      for (const rel of relations) {
-        const { shape, meta } = generateCompoundShape(w, h, {
-          forcedMode: 'right-anchor', sizeRatio: sr, relation: rel,
-        }, canvas);
-        items.push({ id: items.length, shape, meta, canvas, rating: 'unrated', dataUrl: null });
-      }
-    }
-  }
-
-  // ── Random fill — 388 shapes, canvas-weighted ────────────────────────────
-  // Canvas counts: square 36, wide 118, portrait 118, portrait-4-5 116 = 388
-  // Mode: 25% each (lean-right, lean-left, both-deep, right-anchor)
-  const allModes: DistortionMode[] = ['lean-right', 'lean-left', 'both-deep', 'right-anchor'];
+  // ── Random fill — 436 shapes, canvas-weighted ────────────────────────────
+  // Canvas counts: square 40, wide 128, portrait 128, portrait-4-5 140 = 436
+  const allModes: DistortionMode[] = ['lean-right', 'lean-left'];
 
   const canvasBatch: CanvasAspect[] = [
-    ...Array<CanvasAspect>(36).fill('square'),
-    ...Array<CanvasAspect>(118).fill('wide'),
-    ...Array<CanvasAspect>(118).fill('portrait'),
-    ...Array<CanvasAspect>(116).fill('portrait-4-5'),
+    ...Array<CanvasAspect>(40).fill('square'),
+    ...Array<CanvasAspect>(128).fill('wide'),
+    ...Array<CanvasAspect>(128).fill('portrait'),
+    ...Array<CanvasAspect>(140).fill('portrait-4-5'),
   ];
   // Fisher-Yates shuffle for render variety
   for (let i = canvasBatch.length - 1; i > 0; i--) {
@@ -131,24 +112,46 @@ function buildGalleryItems(): GalleryItem[] {
   return items;
 }
 
+/** 100 fully-random shapes (25 per canvas) for inner-corner diagnostic sessions. */
+function buildDiagnosticItems(): GalleryItem[] {
+  const items: GalleryItem[] = [];
+  const canvases: CanvasAspect[] = ['square', 'wide', 'portrait', 'portrait-4-5'];
+  for (const canvas of canvases) {
+    const { w, h } = CANVAS_SIZES[canvas];
+    for (let i = 0; i < 25; i++) {
+      const { shape, meta } = generateCompoundShape(w, h, undefined, canvas);
+      items.push({ id: items.length, shape, meta, canvas, rating: 'unrated', dataUrl: null });
+    }
+  }
+  // Shuffle for visual variety
+  for (let i = items.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = items[i]!; items[i] = items[j]!; items[j] = tmp;
+  }
+  return items;
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
 interface GalleryViewProps {
   onClose: () => void;
+  /** When true: 100-shape diagnostic mode — single-click marks broken, export includes diagnostic fields. */
+  diagMode?: boolean;
 }
 
-export function GalleryView({ onClose }: GalleryViewProps) {
+export function GalleryView({ onClose, diagMode = false }: GalleryViewProps) {
+  const thumbW = diagMode ? DIAG_THUMB_W : THUMB_W;
   const shapesRef = useRef<GalleryItem[]>([]);
 
   const [ratings, setRatings] = useState<Rating[]>(() => {
-    shapesRef.current = buildGalleryItems();
+    shapesRef.current = diagMode ? buildDiagnosticItems() : buildGalleryItems();
     return new Array<Rating>(shapesRef.current.length).fill('unrated');
   });
 
   const [dataUrls, setDataUrls] = useState<(string | null)[]>(() =>
-    new Array<string | null>(GALLERY_SIZE).fill(null),
+    new Array<string | null>(diagMode ? DIAG_SIZE : GALLERY_SIZE).fill(null),
   );
 
   const [renderedCount, setRenderedCount] = useState(0);
@@ -165,12 +168,12 @@ export function GalleryView({ onClose }: GalleryViewProps) {
 
       for (let i = startIdx; i < end; i++) {
         const item = shapesRef.current[i]!;
-        const vp = makeViewport(item.canvas);
-        const { tw, th } = thumbSize(item.canvas);
+        const vp = makeViewport(item.canvas, thumbW);
+        const { tw, th } = thumbSize(item.canvas, thumbW);
         offscreen.width = tw; offscreen.height = th;
-        ctx.fillStyle = '#0E0F11';
+        ctx.fillStyle = '#FFFFFF';
         ctx.fillRect(0, 0, tw, th);
-        renderCompound(ctx, item.shape, '#FFFFFF', vp);
+        renderCompound(ctx, item.shape, useUIStore.getState().shapeColor, vp);
         newUrls[i] = offscreen.toDataURL('image/png');
       }
 
@@ -194,20 +197,29 @@ export function GalleryView({ onClose }: GalleryViewProps) {
     setRatings(prev => {
       const next = [...prev];
       const cur = next[idx] ?? 'unrated';
-      next[idx] = cur === 'unrated' ? 'liked' : cur === 'liked' ? 'disliked' : 'unrated';
+      if (diagMode) {
+        // Diagnostic mode: toggle broken (disliked) / unrated only
+        next[idx] = cur === 'disliked' ? 'unrated' : 'disliked';
+      } else {
+        next[idx] = cur === 'unrated' ? 'liked' : cur === 'liked' ? 'disliked' : 'unrated';
+      }
       return next;
     });
-  }, []);
+  }, [diagMode]);
 
   const handleExport = useCallback(() => {
-    type ExportEntry = {
+    type BaseEntry = {
       mode: DistortionMode; canvas: CanvasAspect;
       rectCount: 2 | 3; relation: 'same' | 'opposite';
       aspectRatio: number; depthMag: number; yOverlapPct: number; sizeRatio: number;
       rotation0: number; rotation1: number; topStyle0: TopStyle; topStyle1: TopStyle;
       xOverlapPct: number; yOverlapAbsPct: number; overlapAreaPct: number;
     };
-    const toEntry = (item: GalleryItem): ExportEntry => ({
+    type DiagEntry = BaseEntry & {
+      staggers: number[]; cornerRadiusPx: number; minEstInLen: number; minEstPullback: number;
+    };
+
+    const toBase = (item: GalleryItem): BaseEntry => ({
       mode:           item.meta.mode,
       canvas:         item.meta.canvas,
       rectCount:      item.meta.rectCount,
@@ -225,46 +237,71 @@ export function GalleryView({ onClose }: GalleryViewProps) {
       overlapAreaPct: parseFloat(item.meta.overlapAreaPct.toFixed(3)),
     });
 
-    const liked    = shapesRef.current.filter((_, i) => ratings[i] === 'liked').map(toEntry);
-    const disliked = shapesRef.current.filter((_, i) => ratings[i] === 'disliked').map(toEntry);
-    const json = JSON.stringify({ liked, disliked }, null, 2);
+    let json: string;
+    let filename: string;
+
+    if (diagMode) {
+      const broken = shapesRef.current
+        .filter((_, i) => ratings[i] === 'disliked')
+        .map((item): DiagEntry => ({
+          ...toBase(item),
+          staggers:       item.meta.staggers.map(s => parseFloat(s.toFixed(1))),
+          cornerRadiusPx: parseFloat(item.meta.cornerRadiusPx.toFixed(2)),
+          minEstInLen:    parseFloat(item.meta.minEstInLen.toFixed(2)),
+          minEstPullback: parseFloat(item.meta.minEstPullback.toFixed(2)),
+        }));
+      json = JSON.stringify({ broken }, null, 2);
+      filename = 'shape-diagnostics.json';
+    } else {
+      const liked    = shapesRef.current.filter((_, i) => ratings[i] === 'liked').map(toBase);
+      const disliked = shapesRef.current.filter((_, i) => ratings[i] === 'disliked').map(toBase);
+      json = JSON.stringify({ liked, disliked }, null, 2);
+      filename = 'shape-ratings.json';
+    }
+
     const blob = new Blob([json], { type: 'application/json' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
-    a.href = url; a.download = 'shape-ratings.json'; a.click();
+    a.href = url; a.download = filename; a.click();
     URL.revokeObjectURL(url);
-  }, [ratings]);
+  }, [diagMode, ratings]);
 
   const likedCount    = ratings.filter(r => r === 'liked').length;
-  const dislikedCount = ratings.filter(r => r === 'disliked').length;
+  const brokenCount   = ratings.filter(r => r === 'disliked').length;
   const isLoading     = renderedCount < shapesRef.current.length;
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#0E0F11] flex flex-col">
+    <div className="fixed inset-0 z-50 bg-[#F0F2F7] flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 flex-shrink-0">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-[#E0E2E8] flex-shrink-0">
         <div className="flex items-center gap-4">
-          <h2 className="text-sm font-medium text-white">Shape Gallery</h2>
-          <span className="text-xs text-white/40">
+          <h2 className="text-sm font-medium text-[#0e0f11]">
+            {diagMode ? 'Diagnostic Gallery' : 'Shape Gallery'}
+          </h2>
+          <span className="text-xs text-[#6B7280]">
             {isLoading
               ? `Rendering ${renderedCount}/${shapesRef.current.length}…`
               : `${shapesRef.current.length} shapes`}
-            {likedCount > 0 && ` · ${likedCount} liked`}
-            {dislikedCount > 0 && ` · ${dislikedCount} disliked`}
+            {diagMode
+              ? (brokenCount > 0 && ` · ${brokenCount} broken`)
+              : (likedCount > 0 && ` · ${likedCount} liked`)}
+            {!diagMode && brokenCount > 0 && ` · ${brokenCount} disliked`}
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-white/30">click to rate</span>
+          <span className="text-xs text-[#9CA3B1]">
+            {diagMode ? 'click to mark broken' : 'click to rate'}
+          </span>
           <button
             onClick={handleExport}
-            disabled={likedCount + dislikedCount === 0}
-            className="rounded-[6px] bg-white/10 px-3 py-1.5 text-xs text-white/70 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            disabled={diagMode ? brokenCount === 0 : likedCount + brokenCount === 0}
+            className="rounded-[6px] bg-[#ECEEF3] px-3 py-1.5 text-xs text-[#6B7280] hover:bg-[#E0E2E8] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
-            Export ratings
+            {diagMode ? 'Export broken' : 'Export ratings'}
           </button>
           <button
             onClick={onClose}
-            className="rounded-[6px] bg-white/10 px-3 py-1.5 text-xs text-white/70 hover:bg-white/20 transition-colors"
+            className="rounded-[6px] bg-[#ECEEF3] px-3 py-1.5 text-xs text-[#6B7280] hover:bg-[#E0E2E8] transition-colors"
           >
             Close
           </button>
@@ -273,9 +310,9 @@ export function GalleryView({ onClose }: GalleryViewProps) {
 
       {/* Loading bar */}
       {isLoading && (
-        <div className="h-0.5 bg-white/5 flex-shrink-0">
+        <div className="h-0.5 bg-[#E0E2E8] flex-shrink-0">
           <div
-            className="h-full bg-white/30 transition-all duration-100"
+            className="h-full bg-[#9CA3B1] transition-all duration-100"
             style={{ width: `${(renderedCount / shapesRef.current.length) * 100}%` }}
           />
         </div>
@@ -285,39 +322,39 @@ export function GalleryView({ onClose }: GalleryViewProps) {
       <div className="flex-1 overflow-y-auto p-4">
         <div
           className="grid gap-2 items-end"
-          style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${THUMB_W}px, 1fr))` }}
+          style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${thumbW}px, 1fr))` }}
         >
           {shapesRef.current.map((item, idx) => {
             const rating     = ratings[idx] ?? 'unrated';
             const url        = dataUrls[idx] ?? null;
-            const { tw, th } = thumbSize(item.canvas);
+            const { tw, th } = thumbSize(item.canvas, thumbW);
             const { w, h }   = CANVAS_SIZES[item.canvas];
             const { meta }   = item;
-            const modeLabel  = meta.mode === 'right-anchor' ? 'ra'
-              : meta.mode === 'lean-right' ? 'lr'
-              : meta.mode === 'lean-left'  ? 'll'
-              : 'bd';
+            const modeLabel  = meta.mode === 'lean-right' ? 'lr' : 'll';
+            const diagTip = diagMode
+              ? ` · staggers=[${meta.staggers.map(s => s.toFixed(0)).join(',')}] · inLen=${meta.minEstInLen.toFixed(1)} · pb=${meta.minEstPullback.toFixed(1)} · r=${meta.cornerRadiusPx.toFixed(1)}`
+              : '';
 
             return (
               <button
                 key={item.id}
                 onClick={() => cycleRating(idx)}
-                title={`${modeLabel} · ${item.canvas} · ${meta.rectCount}r · ${meta.relation === 'opposite' ? 'opp' : 'same'} · sr=${meta.sizeRatio.toFixed(2)} · ts=${meta.topStyle0}/${meta.topStyle1} · xOvlp=${meta.xOverlapPct.toFixed(2)} · yOvlp=${meta.yOverlapAbsPct.toFixed(2)}`}
+                title={`${modeLabel} · ${item.canvas} · ${meta.rectCount}r · ${meta.relation === 'opposite' ? 'opp' : 'same'} · sr=${meta.sizeRatio.toFixed(2)} · ts=${meta.topStyle0}/${meta.topStyle1} · xOvlp=${meta.xOverlapPct.toFixed(2)} · yOvlp=${meta.yOverlapAbsPct.toFixed(2)}${diagTip}`}
                 className={`relative rounded-[6px] overflow-hidden transition-all select-none ${
-                  rating === 'liked'
+                  !diagMode && rating === 'liked'
                     ? 'ring-2 ring-green-400'
                     : rating === 'disliked'
                     ? 'ring-2 ring-red-500'
-                    : 'ring-1 ring-white/10 hover:ring-white/30'
+                    : 'ring-1 ring-black/10 hover:ring-black/25'
                 }`}
                 style={{ aspectRatio: String(w / h) }}
               >
                 {url ? (
                   <img src={url} alt="" width={tw} height={th} className="w-full h-full object-cover" draggable={false} />
                 ) : (
-                  <div className="w-full h-full bg-white/5 animate-pulse" />
+                  <div className="w-full h-full bg-[#E0E2E8] animate-pulse" />
                 )}
-                {rating === 'liked' && (
+                {!diagMode && rating === 'liked' && (
                   <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-green-400 pointer-events-none" />
                 )}
                 {rating === 'disliked' && (
