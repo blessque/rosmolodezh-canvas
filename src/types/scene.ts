@@ -25,16 +25,29 @@ export interface PerspectiveRect {
   topStyle: TopStyle;
 }
 
+/** Image position/scale/rotation within a mask shape */
+export interface ImageTransform {
+  /** Center offset from mask bbox center, in document units */
+  translateX: number;
+  /** Center offset from mask bbox center, in document units */
+  translateY: number;
+  /** Uniform scale (1.0 = cover-fit initial) */
+  scale: number;
+  /** Rotation in degrees */
+  rotateDeg: number;
+}
+
 /** The compound shape built from several perspective rects */
 export interface CompoundShape {
   type: 'compound';
   id: string;
   rects: PerspectiveRect[];
-  /** Optional image URL used as a fill/mask on one rect */
+  /** Optional image URL used as a fill/mask on selected rect(s) */
   imageUrl?: string;
-  /** Index into rects[] that receives the image mask */
-  maskedRectIndex: number;
-
+  /** Indices into rects[] that receive the image mask (empty = no mask) */
+  maskedRectIndices: number[];
+  /** Image position/scale/rotation within the mask shape */
+  imageTransform: ImageTransform;
 }
 
 // ─── Mode 2: Stamp ───────────────────────────────────────────────────────────

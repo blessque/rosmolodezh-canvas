@@ -1,10 +1,38 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useUIStore } from '@/store/uiStore';
 import { useSceneStore } from '@/store/sceneStore';
 import { generateCompoundShape, type CanvasAspect, type GenerateOpts } from '@/modes/generator/GeneratorEngine';
 import { GalleryView } from '@/modes/generator/GalleryView';
 import { DevPanel } from '@/modes/generator/DevPanel';
 import { ColorSlot } from '@/components/ColorSlot';
+import { preloadImage, getMaskBBox, computeCoverTransform, getImageCache } from '@/canvas/imageMaskRenderer';
+import type { CompoundShape } from '@/types/scene';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export function GeneratorPanel() {
   const shapeColor   = useUIStore((s) => s.shapeColor);
@@ -12,33 +40,125 @@ export function GeneratorPanel() {
   const viewport     = useUIStore((s) => s.viewport);
   const setShapeColor  = useUIStore((s) => s.setShapeColor);
   const setCanvasColor = useUIStore((s) => s.setCanvasColor);
+  const imagePickerActive   = useUIStore((s) => s.imagePickerActive);
+  const setImagePickerActive = useUIStore((s) => s.setImagePickerActive);
 
   const [showGallery, setShowGallery] = useState(false);
   const [galleryDiag, setGalleryDiag] = useState(false);
   const [showDev, setShowDev] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
 
+  const fileInputRef    = useRef<HTMLInputElement>(null);
+  const replaceInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Derived: does current compound have an image? ────────────────────────
+  const compound = useSceneStore((s) =>
+    s.objects.find((o) => o.type === 'compound') as CompoundShape | undefined
+  );
+  const imageUrl    = compound?.imageUrl;
+  const hasMask     = (compound?.maskedRectIndices.length ?? 0) > 0;
+
+  // ── Canvas aspect helper ─────────────────────────────────────────────────
   function getCanvasAspect(): CanvasAspect {
     const { documentWidth: w, documentHeight: h } = viewport;
     const ratio = w / h;
-    return ratio > 1.0    ? 'wide'           // landscape (incl. A3 L at 1.415)
-         : ratio <= 0.60  ? 'portrait'        // 9:16
-         : ratio <= 0.85  ? 'portrait-4-5'   // 4:5, A3 P (0.707)
-         : 'square';                          // 1:1
+    return ratio > 1.0    ? 'wide'
+         : ratio <= 0.60  ? 'portrait'
+         : ratio <= 0.85  ? 'portrait-4-5'
+         : 'square';
   }
 
+  // ── File processing ──────────────────────────────────────────────────────
+  async function handleFile(file: File, keepMask = false) {
+    let url: string;
+    const isHeic =
+      file.type === 'image/heic' ||
+      file.type === 'image/heif' ||
+      /\.heic$/i.test(file.name);
+
+    if (isHeic) {
+      const heic2any = (await import('heic2any')).default;
+      const blob = (await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 })) as Blob;
+      url = await blobToDataUrl(blob);
+    } else {
+      url = await fileToDataUrl(file);
+    }
+
+    await preloadImage(url);
+    const sceneStore = useSceneStore.getState();
+
+    if (keepMask && compound && compound.maskedRectIndices.length > 0) {
+      // Replace: keep same rect indices, recompute cover transform for new image
+      const maskedRects = compound.maskedRectIndices.map((i) => compound.rects[i]!);
+      const bbox = getMaskBBox(maskedRects);
+      const img = getImageCache().get(url)!;
+      const coverTransform = computeCoverTransform(img, bbox);
+      sceneStore.setImageMask(compound.maskedRectIndices, url, coverTransform);
+    } else {
+      // New upload: store URL, enter pick mode
+      sceneStore.setRawImageUrl(url);
+      setImagePickerActive(true);
+    }
+  }
+
+  function handleFileInputChange(e: React.ChangeEvent<HTMLInputElement>, keepMask = false) {
+    const file = e.target.files?.[0];
+    if (file) handleFile(file, keepMask);
+    e.target.value = '';
+  }
+
+  // ── Regenerate ───────────────────────────────────────────────────────────
   function handleRegenerate() {
     useSceneStore.getState().pushHistory();
     const { documentWidth: w, documentHeight: h } = viewport;
     const { shape } = generateCompoundShape(w, h, undefined, getCanvasAspect());
+
+    // Preserve existing image if any
+    const currentCompound = useSceneStore.getState().objects.find((o) => o.type === 'compound') as CompoundShape | undefined;
+    const existingImageUrl = currentCompound?.imageUrl;
+
     useSceneStore.getState().setCompoundShape(shape);
+
+    if (existingImageUrl) {
+      // Auto-assign to largest rect
+      const largestIdx = shape.rects.reduce(
+        (best, r, i) => (r.w * r.h > shape.rects[best]!.w * shape.rects[best]!.h ? i : best),
+        0,
+      );
+      const maskedRects = [shape.rects[largestIdx]!];
+      const bbox = getMaskBBox(maskedRects);
+      const img = getImageCache().get(existingImageUrl);
+      const coverTransform = img
+        ? computeCoverTransform(img, bbox)
+        : { translateX: 0, translateY: 0, scale: 1, rotateDeg: 0 };
+
+      useSceneStore.getState().autoAssignLargestRect(existingImageUrl, [largestIdx], coverTransform);
+    }
   }
 
   function handleDevChange(opts: GenerateOpts) {
-    // No pushHistory — dev panel is for exploration, not undoable edits
     const { documentWidth: w, documentHeight: h } = viewport;
     const { shape } = generateCompoundShape(w, h, opts, getCanvasAspect());
     useSceneStore.getState().setCompoundShape(shape);
   }
+
+  // ── Drag-drop ─────────────────────────────────────────────────────────────
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragOver(true);
+  }
+  function handleDragLeave() { setIsDragOver(false); }
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file, false);
+  }
+
+  // ── Thumbnail ─────────────────────────────────────────────────────────────
+  const thumbStyle = imageUrl
+    ? { backgroundImage: `url(${imageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+    : {};
 
   return (
     <>
@@ -58,6 +178,69 @@ export function GeneratorPanel() {
 
         {/* Canvas colour */}
         <ColorSlot label="Холст" color={canvasColor} onChange={setCanvasColor} />
+
+        <div className="h-px bg-[#E0E2E8]" />
+
+        {/* ── Image section ─────────────────────────────────────────────── */}
+        <div className="flex flex-col gap-2">
+          <h3 className="font-cond-black font-black text-[16px] text-[#BBBFC8] uppercase leading-none">
+            Изображение
+          </h3>
+
+          {!imageUrl ? (
+            /* Upload drop zone */
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              className={`border-2 border-dashed rounded-[8px] h-[72px] flex items-center justify-center transition-colors cursor-pointer
+                ${isDragOver ? 'border-[#0e0f11] bg-[#F0F2F7]' : 'border-[#E0E2E8] hover:border-[#BBBFC8]'}`}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <span className="text-[13px] text-[#BBBFC8] font-cond-regular select-none">
+                Загрузить или перетащить
+              </span>
+            </div>
+          ) : (
+            /* Thumbnail + controls */
+            <div className="flex gap-2 items-start">
+              {/* Thumbnail */}
+              <div
+                className="w-[64px] h-[64px] rounded-[8px] bg-[#F0F2F7] flex-shrink-0 border border-[#E0E2E8]"
+                style={thumbStyle}
+              />
+
+              {/* Buttons */}
+              <div className="flex flex-col gap-1.5 flex-1">
+                <button
+                  onClick={() => replaceInputRef.current?.click()}
+                  className="h-[30px] w-full font-cond-regular text-[13px] bg-[#ECEEF3] text-[#0e0f11] rounded-[6px] hover:opacity-80 transition-opacity"
+                >
+                  Заменить
+                </button>
+                <button
+                  onClick={() => useSceneStore.getState().removeImage()}
+                  className="h-[30px] w-full font-cond-regular text-[13px] bg-[#ECEEF3] text-[#0e0f11] rounded-[6px] hover:opacity-80 transition-opacity"
+                >
+                  Удалить
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* "Выбрать фигуру" — shown when image uploaded */}
+          {imageUrl && (
+            <button
+              onClick={() => setImagePickerActive(true)}
+              className={`h-[36px] w-full font-cond-regular text-[14px] rounded-[8px] transition-opacity
+                ${imagePickerActive
+                  ? 'bg-[#0e0f11] text-white'
+                  : 'bg-[#ECEEF3] text-[#0e0f11] hover:opacity-80'}`}
+            >
+              {imagePickerActive ? 'Нажмите на фигуру…' : hasMask ? 'Сменить фигуру' : 'Выбрать фигуру'}
+            </button>
+          )}
+        </div>
 
         <div className="h-px bg-[#E0E2E8]" />
 
@@ -93,6 +276,22 @@ export function GeneratorPanel() {
           )}
         </div>
       </div>
+
+      {/* Hidden file inputs */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/gif,image/webp,image/heic,image/heif"
+        className="hidden"
+        onChange={(e) => handleFileInputChange(e, false)}
+      />
+      <input
+        ref={replaceInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/gif,image/webp,image/heic,image/heif"
+        className="hidden"
+        onChange={(e) => handleFileInputChange(e, true)}
+      />
 
       {showGallery && (
         <GalleryView

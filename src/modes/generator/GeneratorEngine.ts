@@ -524,7 +524,13 @@ export function generateCompoundShape(
   };
 
   return {
-    shape: { type: 'compound', id: uid(), rects, maskedRectIndex: -1 },
+    shape: {
+      type: 'compound',
+      id: uid(),
+      rects,
+      maskedRectIndices: [],
+      imageTransform: { translateX: 0, translateY: 0, scale: 1, rotateDeg: 0 },
+    },
     meta,
   };
 }

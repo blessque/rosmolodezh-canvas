@@ -295,7 +295,7 @@ function roundConcavePath(path: paper.Path, r: number): void {
  * Convert a Paper.js PathItem (in document coordinates) to a Path2D in
  * canvas (screen) coordinates, ready for ctx.fill() / ctx.stroke().
  */
-function paperItemToPath2D(
+export function paperItemToPath2D(
   pathItem: paper.PathItem,
   viewport: ViewportState,
 ): Path2D {
@@ -354,32 +354,33 @@ function paperItemToPath2D(
 // ---------------------------------------------------------------------------
 
 /**
- * Build the smooth, united outline of a CompoundShape using Paper.js geometry.
+ * Build the smooth, united outline of a list of PerspectiveRects using Paper.js geometry.
  * The returned PathItem is in document coordinates.
  *
  * Requires the caller to have already activated the target PaperScope via
  * `scope.activate()`.
  */
 export function buildSmoothPath(
-  shape: CompoundShape,
+  rects: PerspectiveRect[],
+  cornerRadius: number,
   scope: paper.PaperScope,
 ): paper.PathItem {
   scope.activate();
 
-  if (shape.rects.length === 0) {
+  if (rects.length === 0) {
     return new paper.Path();
   }
 
-  let result: paper.PathItem = buildRectPath(shape.rects[0]!);
+  let result: paper.PathItem = buildRectPath(rects[0]!);
 
-  for (let i = 1; i < shape.rects.length; i++) {
-    const rectPath = buildRectPath(shape.rects[i]!);
+  for (let i = 1; i < rects.length; i++) {
+    const rectPath = buildRectPath(rects[i]!);
     result = result.unite(rectPath, { insert: false });
     rectPath.remove();
   }
 
   // Round the concave junction vertices created by unite()
-  roundConcaveJunctions(result, shape.rects[0]?.cornerRadius ?? 30);
+  roundConcaveJunctions(result, cornerRadius);
 
   return result;
 }
@@ -404,7 +405,7 @@ export function renderCompound(
   scope.setup(canvasEl);
   scope.activate();
 
-  const pathItem = buildSmoothPath(shape, scope);
+  const pathItem = buildSmoothPath(shape.rects, shape.rects[0]?.cornerRadius ?? 30, scope);
   const path2d   = paperItemToPath2D(pathItem, viewport);
 
   scope.project.clear();
@@ -432,7 +433,7 @@ export function getCompoundSVGPath(
   scope.setup(offscreen);
   scope.activate();
 
-  const pathItem = buildSmoothPath(shape, scope);
+  const pathItem = buildSmoothPath(shape.rects, shape.rects[0]?.cornerRadius ?? 30, scope);
 
   // paper.PathItem exposes `pathData` as the SVG `d` string
   const svgData = (pathItem as unknown as { pathData: string }).pathData;

@@ -31,6 +31,8 @@ interface UIStoreState {
   setStampStep: (v: number) => void;
   setStampRotate45: (v: boolean) => void;
   setStampImageUrl: (url: string | null) => void;
+  imagePickerActive: boolean;
+  setImagePickerActive: (v: boolean) => void;
 }
 
 export const useUIStore = create<UIStoreState>((set) => ({
@@ -50,6 +52,7 @@ export const useUIStore = create<UIStoreState>((set) => ({
   stampStep: 120,
   stampRotate45: false,
   stampImageUrl: null,
+  imagePickerActive: false,
 
   setMode: (mode) => set({ mode }),
 
@@ -67,4 +70,5 @@ export const useUIStore = create<UIStoreState>((set) => ({
   setStampStep: (v) => set({ stampStep: v }),
   setStampRotate45: (v) => set({ stampRotate45: v }),
   setStampImageUrl: (url) => set({ stampImageUrl: url }),
+  setImagePickerActive: (v) => set({ imagePickerActive: v }),
 }));

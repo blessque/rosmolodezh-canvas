@@ -1,6 +1,7 @@
 import { useSceneStore } from '@/store/sceneStore';
 import { useUIStore } from '@/store/uiStore';
 import { renderCompound } from '@/canvas/compoundRenderer';
+import { renderImageMask } from '@/canvas/imageMaskRenderer';
 import { drawStampInstance } from '@/canvas/stampRenderer';
 import type { CompoundShape, StampStroke } from '@/types/scene';
 import type { ViewportState } from '@/store/uiStore';
@@ -30,13 +31,51 @@ export function exportPNG(docWidth: number, docHeight: number): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
+  const vp = identityViewport(docWidth, docHeight);
+
   // Background
   ctx.fillStyle = canvasColor;
   ctx.fillRect(0, 0, docWidth, docHeight);
 
   // Compound shape
   if (compound) {
-    renderCompound(ctx as unknown as CanvasRenderingContext2D, compound, shapeColor, identityViewport(docWidth, docHeight));
+    const { rects, maskedRectIndices, imageUrl, imageTransform } = compound;
+    const cornerRadius = rects[0]?.cornerRadius ?? 30;
+    const maskedRects     = rects.filter((_, i) => maskedRectIndices.includes(i));
+    const backgroundRects = rects.filter((_, i) => !maskedRectIndices.includes(i));
+
+    // Background compound (non-masked rects)
+    if (backgroundRects.length > 0) {
+      renderCompound(
+        ctx as unknown as CanvasRenderingContext2D,
+        { ...compound, rects: backgroundRects },
+        shapeColor,
+        vp,
+      );
+    }
+
+    // Masked rects filled with shapeColor (behind image)
+    if (maskedRects.length > 0) {
+      renderCompound(
+        ctx as unknown as CanvasRenderingContext2D,
+        { ...compound, rects: maskedRects },
+        shapeColor,
+        vp,
+      );
+    }
+
+    // Image mask layer
+    if (imageUrl && maskedRects.length > 0) {
+      renderImageMask(
+        ctx as unknown as CanvasRenderingContext2D,
+        maskedRects,
+        imageUrl,
+        imageTransform,
+        /*editMode=*/ false,
+        vp,
+        cornerRadius,
+      );
+    }
   }
 
   // Stamp strokes (identity viewport: scale=1, offsets=0)
