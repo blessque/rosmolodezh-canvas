@@ -182,8 +182,6 @@ export function GeneratorCanvas() {
       const delta = angle - drag.startAngle;
       setImageTransform({ ...cur, rotateDeg: drag.startRotateDeg + delta });
     } else if (drag.kind === 'scale') {
-      const dx = doc.x - drag.startDocX;
-      const dy = doc.y - drag.startDocY;
       // Scale based on distance from pivot — use diagonal distance
       const startDist = Math.hypot(
         drag.startDocX - drag.pivotX,
@@ -238,7 +236,7 @@ export function GeneratorCanvas() {
     }
 
     // ── Idle mode: click on mask → enter edit ─────────────────────────────
-    const { maskedRectIndices, imageUrl, imageTransform } = compound;
+    const { maskedRectIndices, imageUrl } = compound;
     if (!editingImage && imageUrl && maskedRectIndices.length > 0) {
       const doc = screenToDoc(e.clientX, e.clientY, canvas, vp);
       const onMask = maskedRectIndices.some((i) => {

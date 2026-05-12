@@ -16,7 +16,6 @@ export function StampCanvas() {
   const shapeColor = useUIStore((s) => s.shapeColor);
   const viewport = useUIStore((s) => s.viewport);
   const stampSize = useUIStore((s) => s.stampSize);
-  const stampStep = useUIStore((s) => s.stampStep);
   const stampRotate45 = useUIStore((s) => s.stampRotate45);
   const stampImageUrl = useUIStore((s) => s.stampImageUrl);
 
