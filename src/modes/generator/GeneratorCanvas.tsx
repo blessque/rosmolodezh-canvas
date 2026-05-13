@@ -16,6 +16,14 @@ import type { CompoundShape, ImageTransform } from '@/types/scene';
 import type { Point } from '@/types/geometry';
 
 // ---------------------------------------------------------------------------
+// Cursors
+// ---------------------------------------------------------------------------
+
+// Custom rotation cursor: circular arrow (no native CSS equivalent)
+const ROTATE_CURSOR =
+  `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'%3E%3Cpath d='M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z' fill='%230e0f11'/%3E%3C/svg%3E") 10 10, pointer`;
+
+// ---------------------------------------------------------------------------
 // DragState type
 // ---------------------------------------------------------------------------
 
@@ -175,7 +183,7 @@ export function GeneratorCanvas() {
           const cursorMap: Record<string, string> = { nw: 'nw-resize', ne: 'ne-resize', se: 'se-resize', sw: 'sw-resize' };
           setCursor(cursorMap[hit.corner] ?? 'default');
         } else if (hit.kind === 'rotate') {
-          setCursor('crosshair');
+          setCursor(ROTATE_CURSOR);
         }
       }
     } else {

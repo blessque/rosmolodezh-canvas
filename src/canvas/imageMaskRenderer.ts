@@ -213,31 +213,39 @@ export function renderImageMask(
   const rotateDeg = transform.rotateDeg;
 
   // ── Draw image ────────────────────────────────────────────────────────────
-  ctx.save();
-  ctx.translate(cxScreen.x, cxScreen.y);
-  ctx.rotate(rotateDeg * Math.PI / 180);
-  ctx.translate(-cxScreen.x, -cxScreen.y);
+  // IMPORTANT: clip() must be applied BEFORE the rotation transform so the mask
+  // stays fixed in document space while only the image pixels rotate inside it.
+  const rad = rotateDeg * Math.PI / 180;
 
   if (editMode) {
-    // Draw image outside clip at 50% alpha
+    // Ghost: rotated image at 50% alpha, unclipped (shows outside mask)
+    ctx.save();
+    ctx.translate(cxScreen.x, cxScreen.y);
+    ctx.rotate(rad);
+    ctx.translate(-cxScreen.x, -cxScreen.y);
     ctx.globalAlpha = 0.5;
     ctx.drawImage(img, draw.x, draw.y, draw.w, draw.h);
+    ctx.restore();
 
-    // Draw image inside clip at full alpha
+    // Clipped: clip first (fixed mask), then rotate → image rotates inside fixed mask
     ctx.save();
     ctx.clip(maskPath, 'nonzero');
+    ctx.translate(cxScreen.x, cxScreen.y);
+    ctx.rotate(rad);
+    ctx.translate(-cxScreen.x, -cxScreen.y);
     ctx.globalAlpha = 1.0;
     ctx.drawImage(img, draw.x, draw.y, draw.w, draw.h);
     ctx.restore();
   } else {
     ctx.save();
     ctx.clip(maskPath, 'nonzero');
+    ctx.translate(cxScreen.x, cxScreen.y);
+    ctx.rotate(rad);
+    ctx.translate(-cxScreen.x, -cxScreen.y);
     ctx.globalAlpha = 1.0;
     ctx.drawImage(img, draw.x, draw.y, draw.w, draw.h);
     ctx.restore();
   }
-
-  ctx.restore();
 
   // ── Edit handles ──────────────────────────────────────────────────────────
   if (editMode) {
