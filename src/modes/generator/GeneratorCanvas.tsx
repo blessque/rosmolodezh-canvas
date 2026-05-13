@@ -58,7 +58,7 @@ export function GeneratorCanvas() {
   const shapeColor     = useUIStore((s) => s.shapeColor);
   const viewport       = useUIStore((s) => s.viewport);
   const imagePickerActive = useUIStore((s) => s.imagePickerActive);
-  const setImagePickerActive = useUIStore((s) => s.setImagePickerActive);
+  const pendingImageUrl = useUIStore((s) => s.pendingImageUrl);
 
   const setImageMask       = useSceneStore((s) => s.setImageMask);
   const setImageTransform  = useSceneStore((s) => s.setImageTransform);
@@ -122,7 +122,7 @@ export function GeneratorCanvas() {
     }
 
     // Render pick-mode hover highlights
-    if (imagePickerActive && hoverRectsRef.current.length > 0) {
+    if ((imagePickerActive || !!pendingImageUrl) && hoverRectsRef.current.length > 0) {
       for (const idx of hoverRectsRef.current) {
         const rect = rects[idx];
         if (!rect) continue;
@@ -131,7 +131,7 @@ export function GeneratorCanvas() {
     }
 
     ctx.restore();
-  }, [objects, shapeColor, viewport, editingImage, imagePickerActive, hoverTick]);
+  }, [objects, shapeColor, viewport, editingImage, imagePickerActive, pendingImageUrl, hoverTick]);
 
   // ── Pointer handlers ──────────────────────────────────────────────────────
 
@@ -144,7 +144,7 @@ export function GeneratorCanvas() {
     const vp = useUIStore.getState().viewport;
 
     // ── Pick mode: update hover highlights ──────────────────────────────────
-    if (useUIStore.getState().imagePickerActive) {
+    if (useUIStore.getState().imagePickerActive || useUIStore.getState().pendingImageUrl) {
       const doc = screenToDoc(e.clientX, e.clientY, canvas, vp);
       const hovered = compound.rects
         .map((r, i) => ({ i, hit: pointInRect(doc, r) }))
@@ -211,7 +211,10 @@ export function GeneratorCanvas() {
     const vp = useUIStore.getState().viewport;
 
     // ── Pick mode ──────────────────────────────────────────────────────────
-    if (useUIStore.getState().imagePickerActive) {
+    const pendingUrl = useUIStore.getState().pendingImageUrl;
+    const isPickMode = useUIStore.getState().imagePickerActive || !!pendingUrl;
+
+    if (isPickMode) {
       const doc = screenToDoc(e.clientX, e.clientY, canvas, vp);
       const hovered = compound.rects
         .map((r, i) => ({ i, hit: pointInRect(doc, r) }))
@@ -219,7 +222,7 @@ export function GeneratorCanvas() {
         .map((v) => v.i);
 
       if (hovered.length > 0) {
-        const imageUrl = compound.imageUrl ?? '';
+        const imageUrl = pendingUrl ?? compound.imageUrl ?? '';
         const maskedRects = hovered.map((i) => compound.rects[i]!);
         const bbox = getMaskBBox(maskedRects);
         const cache = getImageCache();
@@ -229,8 +232,14 @@ export function GeneratorCanvas() {
           : { translateX: 0, translateY: 0, scale: 1, rotateDeg: 0 };
 
         setImageMask(hovered, imageUrl, coverTransform);
-        setImagePickerActive(false);
+        useUIStore.getState().setImagePickerActive(false);
+        useUIStore.getState().setPendingImageUrl(null);
         setEditingImage(true);
+      } else {
+        // Click outside any rect while in placing mode → abort
+        if (pendingUrl) {
+          useUIStore.getState().setPendingImageUrl(null);
+        }
       }
       return;
     }
@@ -322,7 +331,7 @@ export function GeneratorCanvas() {
         startTransform: { ...transform },
       };
     }
-  }, [editingImage, setImageMask, setImagePickerActive, setImageTransform]);
+  }, [editingImage, setImageMask, setImageTransform]);
 
   const onPointerUp = useCallback(() => {
     if (dragRef.current) {
@@ -343,7 +352,7 @@ export function GeneratorCanvas() {
         width: '100%',
         height: '100%',
         display: 'block',
-        cursor: imagePickerActive ? 'crosshair' : editingImage ? 'move' : 'default',
+        cursor: (imagePickerActive || !!pendingImageUrl) ? 'crosshair' : editingImage ? 'move' : 'default',
       }}
     />
   );

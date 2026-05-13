@@ -35,6 +35,10 @@ interface UIStoreState {
   imagePickerActive: boolean;
   setImagePickerActive: (v: boolean) => void;
   setRectCount: (v: 2 | 3) => void;
+  isDraggingFile: boolean;
+  pendingImageUrl: string | null;
+  setIsDraggingFile: (v: boolean) => void;
+  setPendingImageUrl: (url: string | null) => void;
 }
 
 export const useUIStore = create<UIStoreState>((set) => ({
@@ -56,6 +60,8 @@ export const useUIStore = create<UIStoreState>((set) => ({
   stampImageUrl: null,
   rectCount: 3,
   imagePickerActive: false,
+  isDraggingFile: false,
+  pendingImageUrl: null,
 
   setMode: (mode) => set({ mode }),
 
@@ -75,4 +81,6 @@ export const useUIStore = create<UIStoreState>((set) => ({
   setStampImageUrl: (url) => set({ stampImageUrl: url }),
   setImagePickerActive: (v) => set({ imagePickerActive: v }),
   setRectCount: (v) => set({ rectCount: v }),
+  setIsDraggingFile: (v) => set({ isDraggingFile: v }),
+  setPendingImageUrl: (url) => set({ pendingImageUrl: url }),
 }));

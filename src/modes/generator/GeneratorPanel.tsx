@@ -44,11 +44,11 @@ export function GeneratorPanel() {
   const setImagePickerActive = useUIStore((s) => s.setImagePickerActive);
   const rectCount    = useUIStore((s) => s.rectCount);
   const setRectCount = useUIStore((s) => s.setRectCount);
+  const pendingImageUrl = useUIStore((s) => s.pendingImageUrl);
 
   const [showGallery, setShowGallery] = useState(false);
   const [galleryDiag, setGalleryDiag] = useState(false);
   const [showDev, setShowDev] = useState(false);
-  const [isDragOver, setIsDragOver] = useState(false);
 
   const fileInputRef    = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
@@ -97,9 +97,8 @@ export function GeneratorPanel() {
       const coverTransform = computeCoverTransform(img, bbox);
       sceneStore.setImageMask(compound.maskedRectIndices, url, coverTransform);
     } else {
-      // New upload: store URL, enter pick mode
-      sceneStore.setRawImageUrl(url);
-      setImagePickerActive(true);
+      // New upload: enter placing mode
+      useUIStore.getState().setPendingImageUrl(url);
     }
   }
 
@@ -143,23 +142,13 @@ export function GeneratorPanel() {
     useSceneStore.getState().setCompoundShape(shape);
   }
 
-  // ── Drag-drop ─────────────────────────────────────────────────────────────
-  function handleDragOver(e: React.DragEvent) {
-    e.preventDefault();
-    setIsDragOver(true);
-  }
-  function handleDragLeave() { setIsDragOver(false); }
-  function handleDrop(e: React.DragEvent) {
-    e.preventDefault();
-    setIsDragOver(false);
-    const file = e.dataTransfer.files[0];
-    if (file) handleFile(file, false);
-  }
-
   // ── Thumbnail ─────────────────────────────────────────────────────────────
   const thumbStyle = imageUrl
     ? { backgroundImage: `url(${imageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
     : {};
+
+  // Hide panel while in placing mode
+  if (pendingImageUrl) return null;
 
   return (
     <>
@@ -207,11 +196,7 @@ export function GeneratorPanel() {
           {!imageUrl ? (
             /* Upload drop zone */
             <div
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              className={`border-2 border-dashed rounded-[8px] h-[72px] flex items-center justify-center transition-colors cursor-pointer
-                ${isDragOver ? 'border-[#0e0f11] bg-[#F0F2F7]' : 'border-[#E0E2E8] hover:border-[#BBBFC8]'}`}
+              className="border-2 border-dashed rounded-[8px] h-[72px] flex items-center justify-center transition-colors cursor-pointer border-[#E0E2E8] hover:border-[#BBBFC8]"
               onClick={() => fileInputRef.current?.click()}
             >
               <span className="text-[13px] text-[#BBBFC8] font-cond-regular select-none">
