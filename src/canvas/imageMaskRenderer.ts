@@ -80,9 +80,8 @@ export function computeCoverTransform(
 // Edit handle geometry helpers
 // ---------------------------------------------------------------------------
 
-const HANDLE_SIZE = 8;     // corner square half-size in screen px
-const ROTATE_HANDLE_R = 6; // rotation circle radius in screen px
-const ROTATE_OFFSET = 24;  // distance above top-center in screen px
+const HANDLE_SIZE = 8;          // corner square half-size in screen px
+const ROTATE_ZONE_OUTER = HANDLE_SIZE + 18; // 26px from corner center
 
 interface HandleLayout {
   /** corners in screen space: [NW, NE, SE, SW] */
@@ -92,8 +91,6 @@ interface HandleLayout {
     { x: number; y: number },
     { x: number; y: number },
   ];
-  /** center of the rotation handle in screen space */
-  rotatePt: { x: number; y: number };
 }
 
 function getHandleLayout(
@@ -117,17 +114,7 @@ function getHandleLayout(
   const se = rot( hw,  hh);
   const sw = rot(-hw,  hh);
 
-  // top-center midpoint + rotate-offset in the up direction of the image
-  const tcX = (nw.x + ne.x) / 2;
-  const tcY = (nw.y + ne.y) / 2;
-  const upX = -Math.sin(rad);
-  const upY = -Math.cos(rad);  // "up" in rotated image space → screen up component
-  const rotatePt = {
-    x: tcX + upX * ROTATE_OFFSET,
-    y: tcY + upY * ROTATE_OFFSET,
-  };
-
-  return { corners: [nw, ne, se, sw], rotatePt };
+  return { corners: [nw, ne, se, sw] };
 }
 
 // ---------------------------------------------------------------------------
@@ -144,16 +131,22 @@ export function hitTestHandle(
   sx: number, sy: number,
   handles: HandleLayout,
 ): HandleHit {
-  // Rotation handle
-  const dr = Math.hypot(sx - handles.rotatePt.x, sy - handles.rotatePt.y);
-  if (dr <= ROTATE_HANDLE_R + 4) return { kind: 'rotate' };
-
-  // Corner handles
   const cornerNames = ['nw', 'ne', 'se', 'sw'] as const;
+
+  // Check scale zones first (inner zone wins over rotate)
   for (let i = 0; i < 4; i++) {
     const c = handles.corners[i]!;
     if (Math.abs(sx - c.x) <= HANDLE_SIZE + 2 && Math.abs(sy - c.y) <= HANDLE_SIZE + 2) {
       return { kind: 'corner', corner: cornerNames[i]! };
+    }
+  }
+
+  // Check rotate zones (outer ring around each corner)
+  for (let i = 0; i < 4; i++) {
+    const c = handles.corners[i]!;
+    const dist = Math.hypot(sx - c.x, sy - c.y);
+    if (dist <= ROTATE_ZONE_OUTER) {
+      return { kind: 'rotate' };
     }
   }
 
@@ -266,25 +259,6 @@ export function renderImageMask(
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Rotation stem
-    const tcX = (nw!.x + ne!.x) / 2;
-    const tcY = (nw!.y + ne!.y) / 2;
-    ctx.strokeStyle = 'white';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(tcX, tcY);
-    ctx.lineTo(handles.rotatePt.x, handles.rotatePt.y);
-    ctx.stroke();
-
-    // Rotation circle
-    ctx.fillStyle = 'white';
-    ctx.strokeStyle = '#0e0f11';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(handles.rotatePt.x, handles.rotatePt.y, ROTATE_HANDLE_R, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-
     // Corner squares
     for (const corner of handles.corners) {
       ctx.fillStyle = 'white';
@@ -302,4 +276,4 @@ export function renderImageMask(
 // Exported handle layout + hit-test (used by GeneratorCanvas pointer handlers)
 // ---------------------------------------------------------------------------
 
-export { getHandleLayout, getDrawRect, HANDLE_SIZE, ROTATE_HANDLE_R };
+export { getHandleLayout, getDrawRect, HANDLE_SIZE };

@@ -65,6 +65,7 @@ export function GeneratorCanvas() {
   const commitImageTransform = useSceneStore((s) => s.commitImageTransform);
 
   const [editingImage, setEditingImage] = useState(false);
+  const [cursor, setCursor] = useState<string>('default');
   const dragRef      = useRef<DragState | null>(null);
   const hoverRectsRef = useRef<number[]>([]);
   const [hoverTick, setHoverTick] = useState(0);
@@ -143,6 +144,44 @@ export function GeneratorCanvas() {
 
     const vp = useUIStore.getState().viewport;
 
+    // ── Compute hover cursor ─────────────────────────────────────────────────
+    const pendingUrl = useUIStore.getState().pendingImageUrl;
+    if (useUIStore.getState().imagePickerActive || pendingUrl) {
+      setCursor('crosshair');
+    } else if (editingImage && compound.maskedRectIndices.length > 0) {
+      const { rects, imageTransform: transform, maskedRectIndices } = compound;
+      const maskedRects = maskedRectIndices.map((i) => rects[i]!);
+      const bbox = getMaskBBox(maskedRects);
+      const cxDoc = bbox.cx + transform.translateX;
+      const cyDoc = bbox.cy + transform.translateY;
+      const cxScreen = documentToCanvas({ x: cxDoc, y: cyDoc }, vp);
+      const img = getImageCache().get(compound.imageUrl ?? '');
+      if (img) {
+        const imgWScreen = scaleToCanvas(img.naturalWidth * transform.scale, vp);
+        const imgHScreen = scaleToCanvas(img.naturalHeight * transform.scale, vp);
+        const handles = getHandleLayout(cxScreen.x, cxScreen.y, imgWScreen, imgHScreen, transform.rotateDeg);
+        const sx = e.clientX - canvas.getBoundingClientRect().left;
+        const sy = e.clientY - canvas.getBoundingClientRect().top;
+        const hit = hitTestHandle(sx, sy, handles);
+        if (!hit) {
+          // Check if over mask (move cursor)
+          const doc = canvasToDocument({ x: sx, y: sy }, vp);
+          const onMask = maskedRectIndices.some((i) => {
+            const r = rects[i];
+            return r ? pointInRect(doc, r) : false;
+          });
+          setCursor(onMask ? 'move' : 'default');
+        } else if (hit.kind === 'corner') {
+          const cursorMap: Record<string, string> = { nw: 'nw-resize', ne: 'ne-resize', se: 'se-resize', sw: 'sw-resize' };
+          setCursor(cursorMap[hit.corner] ?? 'default');
+        } else if (hit.kind === 'rotate') {
+          setCursor('crosshair');
+        }
+      }
+    } else {
+      setCursor('default');
+    }
+
     // ── Pick mode: update hover highlights ──────────────────────────────────
     if (useUIStore.getState().imagePickerActive || useUIStore.getState().pendingImageUrl) {
       const doc = screenToDoc(e.clientX, e.clientY, canvas, vp);
@@ -198,7 +237,7 @@ export function GeneratorCanvas() {
         scale: Math.max(0.05, drag.startTransform.scale * scaleFactor),
       });
     }
-  }, [setImageTransform]);
+  }, [setImageTransform, editingImage]);
 
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -352,7 +391,7 @@ export function GeneratorCanvas() {
         width: '100%',
         height: '100%',
         display: 'block',
-        cursor: (imagePickerActive || !!pendingImageUrl) ? 'crosshair' : editingImage ? 'move' : 'default',
+        cursor,
       }}
     />
   );

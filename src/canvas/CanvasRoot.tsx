@@ -73,6 +73,17 @@ export function CanvasRoot({ children }: { children?: ReactNode }) {
           console.log('[CanvasRoot] redo (Ctrl+Y)');
         }
       }
+
+      // Delete/Backspace: remove image (only when not typing in an input)
+      if ((e.code === 'Delete' || e.code === 'Backspace') && document.activeElement?.tagName !== 'INPUT') {
+        useSceneStore.getState().removeImage();
+      }
+
+      // Escape: cancel placing mode or pick mode
+      if (e.code === 'Escape') {
+        useUIStore.getState().setPendingImageUrl(null);
+        useUIStore.getState().setImagePickerActive(false);
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
