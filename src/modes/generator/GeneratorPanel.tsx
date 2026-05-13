@@ -9,6 +9,19 @@ import { preloadImage, getMaskBBox, computeCoverTransform, getImageCache } from 
 import type { CompoundShape } from '@/types/scene';
 
 // ---------------------------------------------------------------------------
+// Color Presets
+// ---------------------------------------------------------------------------
+
+const COLOR_PRESETS = [
+  { shape: '#99ECFF', canvas: '#FFFFFF' }, // default cyan+white
+  { shape: '#FE443B', canvas: '#FFFFFF' }, // brand red+white
+  { shape: '#FFFFFF', canvas: '#0e0f11' }, // white+near-black
+  { shape: '#FFDA3B', canvas: '#1A1A2E' }, // yellow+dark navy
+  { shape: '#C8FF3E', canvas: '#0e0f11' }, // lime+near-black
+  { shape: '#0e0f11', canvas: '#F5F0E8' }, // dark+cream
+] as const;
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -184,6 +197,29 @@ export function GeneratorPanel() {
 
         {/* Canvas colour */}
         <ColorSlot label="Холст" color={canvasColor} onChange={setCanvasColor} />
+
+        {/* Color presets */}
+        <div className="flex flex-wrap gap-2">
+          {COLOR_PRESETS.map((p) => {
+            const selected = shapeColor === p.shape && canvasColor === p.canvas;
+            return (
+              <button
+                key={`${p.shape}-${p.canvas}`}
+                onClick={() => { setShapeColor(p.shape); setCanvasColor(p.canvas); }}
+                className={`w-8 h-8 rounded-[8px] overflow-hidden transition-transform
+                  ${selected
+                    ? 'border-2 border-[#0e0f11] scale-110'
+                    : 'border-2 border-transparent scale-100 hover:scale-105'}`}
+                title={`Форма: ${p.shape} / Холст: ${p.canvas}`}
+              >
+                <svg width="32" height="32" viewBox="0 0 32 32">
+                  <polygon points="0,0 32,0 0,32" fill={p.canvas} />
+                  <polygon points="32,0 32,32 0,32" fill={p.shape} />
+                </svg>
+              </button>
+            );
+          })}
+        </div>
 
         <div className="h-px bg-[#E0E2E8]" />
 
