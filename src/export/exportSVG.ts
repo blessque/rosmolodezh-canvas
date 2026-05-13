@@ -1,7 +1,7 @@
 import { useSceneStore } from '@/store/sceneStore';
 import { useUIStore } from '@/store/uiStore';
 import { getCompoundSVGPath } from '@/canvas/compoundRenderer';
-import { getMaskBBox } from '@/canvas/imageMaskRenderer';
+import { getMaskBBox, getImageCache } from '@/canvas/imageMaskRenderer';
 import type { CompoundShape } from '@/types/scene';
 
 /**
@@ -41,13 +41,11 @@ export function exportSVG(docWidth: number, docHeight: number): void {
         const cxDoc = cxBbox + translateX;
         const cyDoc = cyBbox + translateY;
 
-        // We need the image natural size — use a rough estimate via fetch or
-        // store dimensions. Since we have the image in a data URL, we compute
-        // width/height from the transform scale. For SVG we don't know natural
-        // size from the URL alone, so we use the bbox as reference.
-        // Actual image draw size in doc units (will preserve aspect ratio via preserveAspectRatio):
-        const imgW = bbox.bboxW / scale * scale * 4;  // oversized so clip handles cropping
-        const imgH = bbox.bboxH / scale * scale * 4;
+        // Get natural dimensions from the in-memory image cache (always populated
+        // after the user has placed/edited the image in-browser).
+        const cachedImg = getImageCache().get(imageUrl);
+        const imgW = cachedImg ? cachedImg.naturalWidth  * scale : bbox.bboxW * 4;
+        const imgH = cachedImg ? cachedImg.naturalHeight * scale : bbox.bboxH * 4;
         const imgX = cxDoc - imgW / 2;
         const imgY = cyDoc - imgH / 2;
 
@@ -61,14 +59,17 @@ export function exportSVG(docWidth: number, docHeight: number): void {
         svgLines.push('    </clipPath>');
         svgLines.push('  </defs>');
 
-        // Image element with clip + rotate transform
-        const transformAttr = rotateDeg !== 0
+        // Clip on <g> (parent/unrotated space — mask stays fixed),
+        // rotate on <image> only. Mirrors: ctx.clip() → ctx.rotate() → ctx.drawImage()
+        const rotateTransform = rotateDeg !== 0
           ? `transform="rotate(${rotateDeg}, ${cxDoc}, ${cyDoc})"`
           : '';
+        svgLines.push('  <g clip-path="url(#imgMask0)">');
         svgLines.push(
-          `  <image href="${imageUrl}" x="${imgX}" y="${imgY}" width="${imgW}" height="${imgH}" ` +
-          `preserveAspectRatio="xMidYMid slice" clip-path="url(#imgMask0)" ${transformAttr}/>`,
+          `    <image href="${imageUrl}" x="${imgX}" y="${imgY}" width="${imgW}" height="${imgH}" ` +
+          `preserveAspectRatio="none" ${rotateTransform}/>`,
         );
+        svgLines.push('  </g>');
       } else {
         // No image — just render masked rects as compound fill
         svgLines.push(`  <path d="${maskPathData}" fill="${shapeColor}"/>`);
