@@ -55,7 +55,7 @@ export function drawStampInstance(
   const screenY = docY * scale + offsetY;
   const side = docSize * scale;
   const half = side / 2;
-  const r = side * 0.15; // cornerRadius = 15% of side
+  const r = 0; // cornerRadius = 0 (sharp corners)
 
   ctx.save();
   ctx.translate(screenX, screenY);

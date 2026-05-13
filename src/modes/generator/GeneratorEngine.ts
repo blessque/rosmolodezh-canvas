@@ -22,7 +22,7 @@ export type DistortionMode =
   | 'lean-right'    // TL flat, TR raised
   | 'lean-left';    // TL raised, TR flat
 
-export type CanvasAspect = 'square' | 'wide' | 'portrait' | 'portrait-4-5';
+export type CanvasAspect = 'square' | 'wide' | 'a3-landscape' | 'portrait' | 'portrait-4-5';
 
 export type { TopStyle };
 
@@ -105,14 +105,19 @@ function clampAspect(w: number, h: number, maxRatio = 1.75): { w: number; h: num
  */
 function applyTopOffset(
   mode: DistortionMode,
+  w: number,
   h: number,
   topStyle: TopStyle,
   baseMag: number,
 ): { tlo: number; tro: number } {
   if (topStyle === 'flat') return { tlo: 0, tro: 0 };
   const mag = baseMag * rand(0.88, 1.12);
-  if (mode === 'lean-right') return { tlo: 0, tro: -mag * h };
-  /* lean-left */             return { tlo: -mag * h, tro: 0 };
+  // Slope cap: offset/width ≤ tan(14°) ≈ 0.25.
+  // Without this, tall portrait rects produce knife-blade 20–27° slopes.
+  // e.g. baseMag=0.40, h=1000px, w=900px → raw=400px → capped to 225px (14°).
+  const offset = Math.min(mag * h, 0.25 * w);
+  if (mode === 'lean-right') return { tlo: 0, tro: -offset };
+  /* lean-left */             return { tlo: -offset, tro: 0 };
 }
 
 /**
@@ -158,10 +163,8 @@ function getModeForRect(
   return primary === 'lean-right' ? 'lean-left' : 'lean-right';
 }
 
-function defaultRectCount(canvas: CanvasAspect | undefined): 2 | 3 {
-  if (canvas === 'square')       return Math.random() < 0.75 ? 2 : 3;
-  if (canvas === 'portrait-4-5') return Math.random() < 0.25 ? 2 : 3;
-  return 3;
+function defaultRectCount(_canvas: CanvasAspect | undefined): 2 | 3 {
+  return Math.random() < 0.5 ? 2 : 3;
 }
 
 function rotateCorner(
@@ -220,7 +223,7 @@ function buildRect(
 ): PerspectiveRect {
   const { w, h } = clampAspect(rawW, rawH);
   const effectiveRotation = topStyle === 'flat' ? 0 : rotation;
-  const { tlo, tro } = applyTopOffset(mode, h, topStyle, baseMag);
+  const { tlo, tro } = applyTopOffset(mode, w, h, topStyle, baseMag);
   const { blo, bro } = applyBottomOffset(h, topStyle, broOverride, bloOverride);
   return {
     id: uid(), x, y, w, h, cornerRadius,
@@ -244,23 +247,38 @@ function buildTwoRectLayout(
   baseMag: number,
   opts?: GenerateOpts,
 ): { rects: PerspectiveRect[]; overlapFrac: number } {
-  const minStagger = 4 * cornerRadius;
-
-  const w0 = rand(0.60, 0.88) * docWidth;
-  const h0 = rand(0.42, 0.62) * docHeight;
+  // rect0 left-anchored (x=0), capped at 76% width so there is always a clear
+  // gap on the opposite side that rect1 can fill.
+  const w0 = rand(0.55, 0.76) * docWidth;
+  const h0 = rand(0.48, 0.62) * docHeight;
   const rect0 = buildRect(
     0, 0, w0, h0, cornerRadius,
     getModeForRect(primaryMode, relation, 0), topStyle0, rotation0, baseMag,
     opts?.bottomRight0, opts?.bottomLeft0,
   );
 
-  const w1 = rand(0.55, 0.85) * docWidth;
   const h1 = h0 * sizeRatio;
-  const staggerMult = opts?.staggerFrac ?? rand(0.05, 0.18);
-  const xStagger = Math.max(minStagger, staggerMult * docWidth);
-  const x1 = staggerRight ? xStagger : -xStagger;
+  let w1 = rand(0.52, 0.72) * docWidth;
 
-  const overlapFrac = opts?.overlapFrac ?? rand(0.50, 0.72);
+  // Edge-anchoring: rect1 is pinned to the OPPOSITE side from rect0.
+  //   staggerRight=true  → rect0 gap is on the RIGHT  → rect1 right-anchors to canvas right
+  //   staggerRight=false → rect0 gap is on the LEFT   → rect1 left-anchors  to canvas left (x1 < 0)
+  // targetSpan is the total horizontal spread of the composition; scale-to-fit maps it to ~96% canvas.
+  const targetSpan = opts?.staggerFrac !== undefined
+    ? opts.staggerFrac * docWidth   // dev override reused as span fraction
+    : rand(0.94, 1.00) * docWidth;
+
+  // Ensure meaningful X-overlap so the two rects form one connected compound.
+  const minXOverlap = 0.14 * docWidth;
+  if (w0 + w1 - targetSpan < minXOverlap) {
+    w1 = targetSpan - w0 + minXOverlap;
+  }
+
+  const x1 = staggerRight
+    ? targetSpan - w1          // rect1 right edge at targetSpan (canvas right after fit)
+    : -(targetSpan - w0);      // rect1 left  edge at -|…| (canvas left  after fit)
+
+  const overlapFrac = opts?.overlapFrac ?? rand(0.55, 0.72);
   let y1 = h0 * overlapFrac;
   const minOverlap = 0.22 * Math.min(h0, h1);
   if ((h0 - y1) < minOverlap) y1 = h0 - minOverlap;
@@ -300,27 +318,31 @@ function buildTwoRectXCascade(
   const x1 = w0 - xOvlpAbs;
   const overlapFrac = xOvlpAbs / w0;
 
-  // Heights: moderate — bounding box must stay within docHeight so width-constraint dominates.
-  // applyBottomOffset can add up to 0.45×h, so we cap heights + bro to keep the effective
-  // bbox height (h + bro + yStagger) < docHeight even in the worst case.
-  const h0 = rand(0.55, 0.72) * docHeight;
-  const h1 = rand(0.50, 0.68) * docHeight;
+  // Heights: kept moderate so that y0 + h0 + bro and y1 + h1 + bro
+  // stay within docHeight — preventing bbox inflation that shrinks X coverage.
+  const h0 = rand(0.48, 0.62) * docHeight;
+  const h1 = rand(0.44, 0.58) * docHeight;
 
-  // Y stagger for visual interest (reduced upper bound to preserve margin budget)
-  const staggerDown = Math.random() < 0.5;
-  const staggerMult = opts?.staggerFrac ?? rand(0.04, 0.13);
-  const yStagger    = Math.max(minStagger, staggerMult * docHeight);
-  const y1 = staggerDown ? yStagger : -yStagger;
+  // Top-anchor rect0: for angled topStyle the raised corner goes UP by ~baseMag×h0.
+  // Shifting rect0 DOWN by that same amount puts the raised corner near y=0,
+  // so the bbox has no (or minimal) negative Y and scale-to-fit stays close to 1.
+  const y0 = topStyle0 === 'flat' ? 0 : baseMag * h0;
 
-  // Cap bottom distortion so h + bro + stagger stays well within docHeight.
-  // Without this, flat topStyle allows bro up to 0.45×h → total can reach 1.4×docH.
-  const bro0 = opts?.bottomRight0 ?? rand(0.06, 0.20);
+  // Substantial downward stagger so rect1 is clearly lower than rect0.
+  const yStagger = opts?.staggerFrac !== undefined
+    ? opts.staggerFrac * docHeight
+    : rand(0.26, 0.42) * docHeight;
+  const y1 = yStagger;
+
+  // Keep bottom offsets small — large bro inflates the bbox downward and
+  // kills X coverage via scale-to-fit. flat topStyle uses same range here.
+  const bro0 = opts?.bottomRight0 ?? rand(0.06, 0.16);
   const blo0 = opts?.bottomLeft0  ?? (Math.random() < 0.45 ? rand(0.04, 0.12) : 0);
-  const bro1 = opts?.bottomRight1 ?? rand(0.06, 0.20);
+  const bro1 = opts?.bottomRight1 ?? rand(0.06, 0.16);
   const blo1 = opts?.bottomLeft1  ?? (Math.random() < 0.45 ? rand(0.04, 0.12) : 0);
 
   const rect0 = buildRect(
-    0,  0,  w0, h0, cornerRadius,
+    0,  y0, w0, h0, cornerRadius,
     getModeForRect(primaryMode, relation, 0), topStyle0, rotation0, baseMag,
     bro0, blo0,
   );
@@ -367,13 +389,23 @@ function buildThreeRectYCascade(
   const w1 = rand(0.70, 0.90) * docWidth;
   const w2 = rand(0.68, 0.88) * docWidth;
 
-  // ── X stagger with guaranteed minimum ────────────────────────────────────
-  const staggerMult1 = opts?.staggerFrac ?? rand(0.08, 0.20);
-  const staggerMult2 = opts?.staggerFrac ?? rand(0.08, 0.20);
+  // ── X stagger: cumulative for staircase effect ───────────────────────────
+  // Cumulative stagger gives a clear visual step at each rect boundary.
+  // Smaller range (0.06–0.14) keeps the total bboxX from blowing out the scale budget.
+  const staggerMult1 = opts?.staggerFrac ?? rand(0.06, 0.14);
+  const staggerMult2 = opts?.staggerFrac ?? rand(0.06, 0.14);
   const xStagger1 = Math.max(minStagger, staggerMult1 * docWidth);
   const xStagger2 = Math.max(minStagger, staggerMult2 * docWidth);
   const x1 = staggerRight ?  xStagger1 : -xStagger1;
-  const x2 = x1 + (staggerRight ? xStagger2 : -xStagger2);
+  let x2 = x1 + (staggerRight ? xStagger2 : -xStagger2);
+  // Anti-alignment: right edges of rect1 and rect2 must differ by ≥10% docWidth.
+  const rightEdge1 = x1 + w1;
+  const rightEdge2 = x2 + w2;
+  if (Math.abs(rightEdge2 - rightEdge1) < 0.10 * docWidth) {
+    x2 = x1 + (staggerRight
+      ? xStagger2 + 0.12 * docWidth
+      : -(xStagger2 + 0.12 * docWidth));
+  }
 
   const topStyle2: TopStyle = opts?.topStyle2 ?? (Math.random() < 0.40 ? 'flat' : 'angled');
   const rotation2 = opts?.rotation2 ?? rand(-8, 8);
@@ -416,7 +448,13 @@ function buildThreeRectXCascade(
 
   // ── Heights: gradient so rect2 is visibly smallest ───────────────────────
   const h0 = rand(0.44, 0.68) * docHeight;
-  const h1 = rand(0.38, 0.60) * docHeight;
+  let h1 = rand(0.38, 0.60) * docHeight;
+  // Anti-boring-diagonal: when h1/h0 ≈ sr01, the top-edge slopes of rect0 and
+  // rect1 match, producing one continuous diagonal across the compound outline.
+  // If they're within 0.20 of each other, snap h1 steeper by at least 22%.
+  if (Math.abs(h1 / h0 - sr01) < 0.20) {
+    h1 = Math.min(0.60 * docHeight, h0 * (sr01 + 0.22));
+  }
   const h2 = rand(0.28, 0.48) * docHeight;
 
   // ── Y stagger — independent (non-cumulative) to cap bbox height ───────────
@@ -455,7 +493,7 @@ export function generateCompoundShape(
   opts?: GenerateOpts,
   canvasAspect?: CanvasAspect,
 ): { shape: CompoundShape; meta: ShapeGenerationMeta } {
-  const cornerRadius = (opts?.cornerRadiusMult ?? 0.015) * Math.min(docWidth, docHeight);
+  const cornerRadius = (opts?.cornerRadiusMult ?? 0.01) * Math.min(docWidth, docHeight);
 
   const randomModes: DistortionMode[] = ['lean-right', 'lean-left'];
   const primaryMode: DistortionMode =
@@ -473,8 +511,8 @@ export function generateCompoundShape(
   if (opts?.sizeRatio !== undefined) {
     sr01 = opts.sizeRatio;
     sr12 = opts.sizeRatio;
-  } else if (canvasAspect === 'wide') {
-    sr01 = rectCountActual === 3 ? rand(0.50, 0.65) : rand(0.38, 0.52);
+  } else if (canvasAspect === 'wide' || canvasAspect === 'a3-landscape') {
+    sr01 = rectCountActual === 3 ? rand(0.50, 0.65) : rand(0.65, 0.85);
     sr12 = rectCountActual === 3 ? rand(0.50, 0.65) : sr01;
   } else if (canvasAspect === 'portrait') {
     sr01 = rand(0.62, 0.76);
@@ -496,14 +534,16 @@ export function generateCompoundShape(
   const topStyle1: TopStyle = opts?.topStyle1 ?? (Math.random() < 0.40 ? 'flat' : 'angled');
 
   // Shared distortion magnitude — keeps rects "brothers and sisters"
-  const baseMag = opts?.baseMag ?? rand(0.20, 0.45);
+  const baseMag = opts?.baseMag ?? rand(0.20, 0.38);
 
   // ── Build rects ────────────────────────────────────────────────────────────
   let rects: PerspectiveRect[];
   let overlapFrac: number;
 
+  const isWide = canvasAspect === 'wide' || canvasAspect === 'a3-landscape';
+
   if (rectCountActual === 3) {
-    if (canvasAspect === 'wide') {
+    if (isWide) {
       const r = buildThreeRectXCascade(
         docWidth, docHeight, cornerRadius,
         primaryMode, relation, sr01, sr12,
@@ -521,7 +561,7 @@ export function generateCompoundShape(
       rects = r.rects; overlapFrac = r.overlapFrac01;
     }
   } else {
-    if (canvasAspect === 'wide') {
+    if (isWide) {
       const r = buildTwoRectXCascade(
         docWidth, docHeight, cornerRadius,
         primaryMode, relation, sr01,
@@ -568,7 +608,7 @@ export function generateCompoundShape(
 
   // ── Diagnostic: stagger distances (post-scale, between adjacent rect pairs) ─
   // X-cascade uses Y-stagger; everything else uses X-stagger.
-  const isXCascade = canvasAspect === 'wide';
+  const isXCascade = isWide;
   const staggers: number[] = [
     isXCascade
       ? Math.abs(rects[1]!.y - rects[0]!.y)

@@ -15,10 +15,11 @@ import type { CompoundShape } from '@/types/scene';
 const COLOR_PRESETS = [
   { shape: '#99ECFF', canvas: '#FFFFFF' }, // default cyan+white
   { shape: '#FE443B', canvas: '#FFFFFF' }, // brand red+white
-  { shape: '#FFFFFF', canvas: '#0e0f11' }, // white+near-black
-  { shape: '#FFDA3B', canvas: '#1A1A2E' }, // yellow+dark navy
-  { shape: '#C8FF3E', canvas: '#0e0f11' }, // lime+near-black
-  { shape: '#0e0f11', canvas: '#F5F0E8' }, // dark+cream
+  { shape: '#BF00FF', canvas: '#FEFE78' }, // brand purple+yellow
+  { shape: '#00FFAA', canvas: '#004517' }, // brand mint+dark green
+  { shape: '#FF0097', canvas: '#D4FA48' }, // brand pink+lime
+  { shape: '#0095FF', canvas: '#00FFAA' }, // brand blue+mint
+  { shape: '#E7002B', canvas: '#FFC7B6' }, // brand red+peach
 ] as const;
 
 // ---------------------------------------------------------------------------
