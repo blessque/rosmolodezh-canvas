@@ -281,14 +281,13 @@ function buildTwoRectLayout(
 function buildThreeRectYCascade(
   docWidth: number, docHeight: number, cornerRadius: number,
   primaryMode: DistortionMode, relation: 'same' | 'opposite',
-  staggerRight: boolean, sr01: number,
+  staggerRight: boolean, sr01: number, sr12: number,
   rotation0: number, rotation1: number,
   topStyle0: TopStyle, topStyle1: TopStyle,
   baseMag: number,
   opts?: GenerateOpts,
 ): { rects: PerspectiveRect[]; overlapFrac01: number } {
   const minStagger = 4 * cornerRadius;
-  const sr12 = rand(0.70, 0.88);
 
   // ── Height coverage: solve h0 so total Y span ≈ docHeight ──────────────
   const yOvlpAbs  = (opts?.overlapFrac ?? rand(0.07, 0.13)) * docHeight;
@@ -334,14 +333,13 @@ function buildThreeRectYCascade(
 function buildThreeRectXCascade(
   docWidth: number, docHeight: number, cornerRadius: number,
   primaryMode: DistortionMode, relation: 'same' | 'opposite',
-  sr01: number,
+  sr01: number, sr12: number,
   rotation0: number, rotation1: number,
   topStyle0: TopStyle, topStyle1: TopStyle,
   baseMag: number,
   opts?: GenerateOpts,
 ): { rects: PerspectiveRect[]; overlapFrac01: number } {
   const minStagger = 4 * cornerRadius;
-  const sr12 = rand(0.70, 0.88);
 
   // ── Width coverage: solve w0 so total X span ≈ docWidth ──────────────────
   const xOvlpAbs = (opts?.overlapFrac ?? rand(0.07, 0.13)) * docWidth;
@@ -405,7 +403,26 @@ export function generateCompoundShape(
 
   const staggerRight = primaryMode === 'lean-left'; // expose rect[0]'s raised LEFT edge
 
-  const sizeRatio = opts?.sizeRatio ?? (rectCountActual === 3 ? rand(0.70, 0.88) : rand(0.57, 0.85));
+  let sr01: number;
+  let sr12: number;
+  if (opts?.sizeRatio !== undefined) {
+    sr01 = opts.sizeRatio;
+    sr12 = opts.sizeRatio;
+  } else if (canvasAspect === 'wide') {
+    sr01 = rectCountActual === 3 ? rand(0.50, 0.65) : rand(0.38, 0.52);
+    sr12 = rectCountActual === 3 ? rand(0.50, 0.65) : sr01;
+  } else if (canvasAspect === 'portrait') {
+    sr01 = rand(0.62, 0.76);
+    sr12 = rand(0.62, 0.76);
+  } else if (canvasAspect === 'portrait-4-5') {
+    sr01 = rand(0.65, 0.80);
+    sr12 = rand(0.65, 0.80);
+  } else {
+    // square — keep current mild contrast
+    sr01 = rectCountActual === 3 ? rand(0.70, 0.88) : rand(0.57, 0.85);
+    sr12 = sr01;
+  }
+  const sizeRatio = sr01; // representative value for meta reporting
 
   const rotation0 = opts?.rotation0 ?? rand(-8, 8);
   const rotation1 = opts?.rotation1 ?? rand(-8, 8);
@@ -424,7 +441,7 @@ export function generateCompoundShape(
     if (canvasAspect === 'wide') {
       const r = buildThreeRectXCascade(
         docWidth, docHeight, cornerRadius,
-        primaryMode, relation, sizeRatio,
+        primaryMode, relation, sr01, sr12,
         rotation0, rotation1, topStyle0, topStyle1, baseMag,
         opts,
       );
@@ -432,7 +449,7 @@ export function generateCompoundShape(
     } else {
       const r = buildThreeRectYCascade(
         docWidth, docHeight, cornerRadius,
-        primaryMode, relation, staggerRight, sizeRatio,
+        primaryMode, relation, staggerRight, sr01, sr12,
         rotation0, rotation1, topStyle0, topStyle1, baseMag,
         opts,
       );

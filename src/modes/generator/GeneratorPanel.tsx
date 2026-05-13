@@ -42,6 +42,8 @@ export function GeneratorPanel() {
   const setCanvasColor = useUIStore((s) => s.setCanvasColor);
   const imagePickerActive   = useUIStore((s) => s.imagePickerActive);
   const setImagePickerActive = useUIStore((s) => s.setImagePickerActive);
+  const rectCount    = useUIStore((s) => s.rectCount);
+  const setRectCount = useUIStore((s) => s.setRectCount);
 
   const [showGallery, setShowGallery] = useState(false);
   const [galleryDiag, setGalleryDiag] = useState(false);
@@ -108,19 +110,15 @@ export function GeneratorPanel() {
   }
 
   // ── Regenerate ───────────────────────────────────────────────────────────
-  function handleRegenerate() {
+  function handleRegenerateWithRectCount(count: 2 | 3) {
     useSceneStore.getState().pushHistory();
     const { documentWidth: w, documentHeight: h } = viewport;
-    const { shape } = generateCompoundShape(w, h, undefined, getCanvasAspect());
-
-    // Preserve existing image if any
+    const opts: GenerateOpts = { rectCount: count };
+    const { shape } = generateCompoundShape(w, h, opts, getCanvasAspect());
     const currentCompound = useSceneStore.getState().objects.find((o) => o.type === 'compound') as CompoundShape | undefined;
     const existingImageUrl = currentCompound?.imageUrl;
-
     useSceneStore.getState().setCompoundShape(shape);
-
     if (existingImageUrl) {
-      // Auto-assign to largest rect
       const largestIdx = shape.rects.reduce(
         (best, r, i) => (r.w * r.h > shape.rects[best]!.w * shape.rects[best]!.h ? i : best),
         0,
@@ -131,9 +129,12 @@ export function GeneratorPanel() {
       const coverTransform = img
         ? computeCoverTransform(img, bbox)
         : { translateX: 0, translateY: 0, scale: 1, rotateDeg: 0 };
-
       useSceneStore.getState().autoAssignLargestRect(existingImageUrl, [largestIdx], coverTransform);
     }
+  }
+
+  function handleRegenerate() {
+    handleRegenerateWithRectCount(rectCount);
   }
 
   function handleDevChange(opts: GenerateOpts) {
@@ -164,6 +165,22 @@ export function GeneratorPanel() {
     <>
       <div className="bg-white rounded-[22px] p-3 flex flex-col gap-4">
         <h2 className="font-cond-black font-black text-[24px] text-[#BBBFC8] uppercase leading-none">Форма</h2>
+
+        {/* Rect count */}
+        <div className="flex gap-[2px] rounded-[8px] bg-[#E5E7EC] p-[3px]">
+          {([2, 3] as const).map((n) => (
+            <button
+              key={n}
+              onClick={() => { setRectCount(n); handleRegenerateWithRectCount(n); }}
+              className={`flex-1 h-[32px] font-cond-regular text-[15px] rounded-[6px] transition-colors
+                ${rectCount === n
+                  ? 'bg-white text-[#0e0f11] shadow-sm'
+                  : 'text-[#6B7280] hover:text-[#0e0f11]'}`}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
 
         {/* Regenerate */}
         <button
