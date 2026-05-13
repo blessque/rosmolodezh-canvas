@@ -66,10 +66,14 @@ export default function App() {
       useUIStore.getState().setIsDraggingFile(false);
       const file = e.dataTransfer?.files[0];
       if (!file) return;
-      const url = await processFile(file);
-      const { preloadImage } = await import('@/canvas/imageMaskRenderer');
-      await preloadImage(url);
-      useUIStore.getState().setPendingImageUrl(url);
+      try {
+        const url = await processFile(file);
+        const { preloadImage } = await import('@/canvas/imageMaskRenderer');
+        await preloadImage(url);
+        useUIStore.getState().setPendingImageUrl(url);
+      } catch (err) {
+        console.error('[drop] Image processing failed:', err);
+      }
     };
 
     window.addEventListener('dragenter', onDragEnter);
