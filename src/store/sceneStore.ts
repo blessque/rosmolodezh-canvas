@@ -93,7 +93,8 @@ export const useSceneStore = create<SceneStoreState>((set, get) => ({
     })),
 
   undo: () => {
-    const entry = get().past.at(-1);
+    const past = get().past;
+    const entry = past.length > 0 ? past[past.length - 1] : undefined;
     if (!entry) return;
     if (entry.ui) useUIStore.getState().restoreUISnapshot(entry.ui);
     set((s) => ({

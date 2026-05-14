@@ -17,7 +17,6 @@ export function StampCanvas() {
   const viewport     = useUIStore((s) => s.viewport);
   const stampSize    = useUIStore((s) => s.stampSize);
   const stampShape   = useUIStore((s) => s.stampShape);
-  const stampStepIdx = useUIStore((s) => s.stampStepIdx);
   const stampImageUrl = useUIStore((s) => s.stampImageUrl);
 
   // Live drawing state — not in store (not undoable mid-gesture)
