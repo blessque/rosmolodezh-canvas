@@ -4,25 +4,15 @@
 
 import { uid } from '@/utils/uid';
 import type { StampInstance, StampStroke } from '@/types/scene';
+import { STEP_MULTIPLIERS } from '@/store/uiStore';
 
 // ─── Casual zig-zag path ──────────────────────────────────────────────────────
 
 /**
  * Generate a casual zig-zag polyline (bouncing-ball trace) across the canvas.
  *
- * Sweep axis: randomly chosen — wide canvases lean toward X-sweep (65%),
- * portrait canvases lean toward Y-sweep (65%), but either is possible on any
- * canvas so wide canvases can start mid-left-side and portrait canvases can
- * start on the top or bottom edge.
- *
- * Non-physics angles: every segment independently picks its own slope in the
- * range 1.5–4.5. Because incoming and outgoing slopes are independent, the
- * angle of incidence ≠ angle of reflection. V-angles at turns range ~25°–67°
- * with natural variation across bounces.
- *
- * Start position: the starting point is at the leading edge of the sweep
- * (left edge for X-sweep, top edge for Y-sweep). The perpendicular coordinate
- * is fully random across the usable canvas — no artificial bias toward borders.
+ * Shallow angles (15°–35°), with slight curvature via midpoint displacement,
+ * and occasional mid-segment turns for organic variety.
  */
 export function computeCasualZigZagPath(
   docW: number,
@@ -36,21 +26,22 @@ export function computeCasualZigZagPath(
   const aspect = docW / docH;
   const xSweep = Math.random() < (aspect >= 1 ? 0.65 : 0.35);
 
+  const waypoints: { x: number; y: number }[] = [];
+
   if (xSweep) {
     // ── X progresses left→right; Y bounces top↔bottom ──────────────────────
     const startX = margin + Math.random() * usableW * 0.15;
-    const startY = margin + Math.random() * usableH; // anywhere on left edge
-    const points: { x: number; y: number }[] = [{ x: startX, y: startY }];
+    const startY = margin + Math.random() * usableH;
+    waypoints.push({ x: startX, y: startY });
 
     let x = startX;
     let y = startY;
-    // Start heading toward the farther Y border to avoid a degenerate first segment
     let goingDown = y < margin + usableH * 0.5;
 
     while (x < docW - margin) {
-      // Independent slope per segment → incidence ≠ reflection (non-physics)
-      const slope = 1.5 + Math.random() * 3.0; // |dy/dx| 1.5–4.5
-      const turnPad = margin * (0.7 + Math.random() * 1.0); // random proximity to border
+      // Shallow slope: |dy/dx| = 0.27–0.70 → angles ~15°–35°
+      const slope = 0.27 + Math.random() * 0.43;
+      const turnPad = margin * (0.7 + Math.random() * 1.0);
       const targetY = goingDown ? docH - turnPad : turnPad;
 
       const dy = Math.abs(targetY - y);
@@ -63,13 +54,26 @@ export function computeCasualZigZagPath(
         newX = docW - margin;
         newY = goingDown ? y + actualDx * slope : y - actualDx * slope;
         newY = Math.max(margin, Math.min(docH - margin, newY));
-        points.push({ x: newX, y: newY });
+        // Occasionally add mid-turn before final point (40% chance)
+        if (Math.random() < 0.4) {
+          const t = 0.3 + Math.random() * 0.4;
+          const mx = x + (newX - x) * t;
+          const my = y + (newY - y) * t;
+          const angleRad = Math.atan2(newY - y, newX - x);
+          const turnDelta = ((Math.random() - 0.5) * 2 * 15 * Math.PI) / 180;
+          const bendLen = Math.hypot(newX - mx, newY - my) * 0.3;
+          waypoints.push({
+            x: Math.max(margin, Math.min(docW - margin, mx + Math.cos(angleRad + turnDelta) * bendLen * 0.1)),
+            y: Math.max(margin, Math.min(docH - margin, my + Math.sin(angleRad + turnDelta) * bendLen * 0.1)),
+          });
+        }
+        waypoints.push({ x: newX, y: newY });
         break;
       }
 
       const jx = (Math.random() - 0.5) * usableW * 0.02;
       const jy = (Math.random() - 0.5) * usableH * 0.03;
-      points.push({
+      waypoints.push({
         x: Math.max(margin, Math.min(docW - margin, newX + jx)),
         y: Math.max(margin, Math.min(docH - margin, newY + jy)),
       });
@@ -78,21 +82,18 @@ export function computeCasualZigZagPath(
       y = newY;
       goingDown = !goingDown;
     }
-
-    return points;
   } else {
     // ── Y progresses top→bottom; X bounces left↔right ──────────────────────
     const startY = margin + Math.random() * usableH * 0.15;
-    const startX = margin + Math.random() * usableW; // anywhere on top edge
-    const points: { x: number; y: number }[] = [{ x: startX, y: startY }];
+    const startX = margin + Math.random() * usableW;
+    waypoints.push({ x: startX, y: startY });
 
     let x = startX;
     let y = startY;
-    // Start heading toward the farther X border to avoid a degenerate first segment
     let goingRight = x < margin + usableW * 0.5;
 
     while (y < docH - margin) {
-      const slope = 1.5 + Math.random() * 3.0; // |dx/dy| 1.5–4.5
+      const slope = 0.27 + Math.random() * 0.43;
       const turnPad = margin * (0.7 + Math.random() * 1.0);
       const targetX = goingRight ? docW - turnPad : turnPad;
 
@@ -106,13 +107,24 @@ export function computeCasualZigZagPath(
         newY = docH - margin;
         newX = goingRight ? x + actualDy * slope : x - actualDy * slope;
         newX = Math.max(margin, Math.min(docW - margin, newX));
-        points.push({ x: newX, y: newY });
+        if (Math.random() < 0.4) {
+          const t = 0.3 + Math.random() * 0.4;
+          const mx = x + (newX - x) * t;
+          const my = y + (newY - y) * t;
+          const angleRad = Math.atan2(newY - y, newX - x);
+          const turnDelta = ((Math.random() - 0.5) * 2 * 15 * Math.PI) / 180;
+          waypoints.push({
+            x: Math.max(margin, Math.min(docW - margin, mx + Math.cos(angleRad + turnDelta) * 0.1)),
+            y: Math.max(margin, Math.min(docH - margin, my + Math.sin(angleRad + turnDelta) * 0.1)),
+          });
+        }
+        waypoints.push({ x: newX, y: newY });
         break;
       }
 
       const jx = (Math.random() - 0.5) * usableW * 0.03;
       const jy = (Math.random() - 0.5) * usableH * 0.02;
-      points.push({
+      waypoints.push({
         x: Math.max(margin, Math.min(docW - margin, newX + jx)),
         y: Math.max(margin, Math.min(docH - margin, newY + jy)),
       });
@@ -121,9 +133,32 @@ export function computeCasualZigZagPath(
       y = newY;
       goingRight = !goingRight;
     }
-
-    return points;
   }
+
+  // ── Midpoint curvature pass ───────────────────────────────────────────────
+  // Insert slightly displaced midpoints between each pair of waypoints for
+  // organic curves instead of hard polyline edges.
+  const curved: { x: number; y: number }[] = [];
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    curved.push(waypoints[i]!);
+    const a = waypoints[i]!;
+    const b = waypoints[i + 1]!;
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    if (len > 0) {
+      const bend = (Math.random() - 0.5) * 0.07 * len;
+      curved.push({
+        x: Math.max(margin, Math.min(docW - margin, mx + (-dy / len) * bend)),
+        y: Math.max(margin, Math.min(docH - margin, my + (dx / len) * bend)),
+      });
+    }
+  }
+  curved.push(waypoints[waypoints.length - 1]!);
+
+  return curved;
 }
 
 // ─── Path distribution ────────────────────────────────────────────────────────
@@ -176,11 +211,12 @@ export function distributeAlongPath(
 export function buildZigZagStroke(
   docW: number,
   docH: number,
-  _stampSize: number,
-  step: number,
+  stampSize: number,
+  stepIdx: number,
 ): StampStroke {
+  const actualStep = STEP_MULTIPLIERS[Math.max(0, Math.min(9, stepIdx))]! * stampSize;
   const waypoints = computeCasualZigZagPath(docW, docH);
-  const positions = distributeAlongPath(waypoints, step);
+  const positions = distributeAlongPath(waypoints, actualStep);
   const stamps: StampInstance[] = positions.map((p) => ({
     x: p.x,
     y: p.y,

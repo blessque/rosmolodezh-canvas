@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useSceneStore } from '@/store/sceneStore';
-import { useUIStore } from '@/store/uiStore';
+import { useUIStore, STEP_MULTIPLIERS } from '@/store/uiStore';
 import { drawStampInstance } from '@/canvas/stampRenderer';
 import { distributeAlongPath, buildFreehandStroke } from '@/modes/stamp/StampEngine';
 import type { StampStroke, StampInstance } from '@/types/scene';
@@ -12,11 +12,12 @@ import type { StampStroke, StampInstance } from '@/types/scene';
 export function StampCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const objects = useSceneStore((s) => s.objects);
-  const shapeColor = useUIStore((s) => s.shapeColor);
-  const viewport = useUIStore((s) => s.viewport);
-  const stampSize = useUIStore((s) => s.stampSize);
-  const stampRotate45 = useUIStore((s) => s.stampRotate45);
+  const objects      = useSceneStore((s) => s.objects);
+  const shapeColor   = useUIStore((s) => s.shapeColor);
+  const viewport     = useUIStore((s) => s.viewport);
+  const stampSize    = useUIStore((s) => s.stampSize);
+  const stampShape   = useUIStore((s) => s.stampShape);
+  const stampStepIdx = useUIStore((s) => s.stampStepIdx);
   const stampImageUrl = useUIStore((s) => s.stampImageUrl);
 
   // Live drawing state — not in store (not undoable mid-gesture)
@@ -24,21 +25,8 @@ export function StampCanvas() {
   const livePointsRef = useRef<{ x: number; y: number }[]>([]);
   const [liveStamps, setLiveStamps] = useState<StampInstance[]>([]);
 
-  // DPR-aware resize
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-      const { width, height } = entry.contentRect;
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.round(width * dpr);
-      canvas.height = Math.round(height * dpr);
-    });
-    observer.observe(canvas);
-    return () => observer.disconnect();
-  }, []);
+  // Cursor preview in doc space
+  const [cursorDocPos, setCursorDocPos] = useState<{ x: number; y: number } | null>(null);
 
   // Render loop
   useEffect(() => {
@@ -48,6 +36,11 @@ export function StampCanvas() {
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
+    const { canvasWidth, canvasHeight } = viewport;
+    if (canvasWidth === 0 || canvasHeight === 0) return;
+    canvas.width  = Math.round(canvasWidth  * dpr);
+    canvas.height = Math.round(canvasHeight * dpr);
+
     const { documentWidth: docW, documentHeight: docH } = viewport;
     const cssW = canvas.width / dpr;
     const cssH = canvas.height / dpr;
@@ -67,7 +60,7 @@ export function StampCanvas() {
       for (const inst of stroke.stamps) {
         drawStampInstance(
           ctx, inst.x, inst.y, stampSize,
-          inst.angle, s, ox, oy, shapeColor, stampRotate45, stampImageUrl,
+          inst.angle, s, ox, oy, shapeColor, stampShape, stampImageUrl,
         );
       }
     }
@@ -76,12 +69,22 @@ export function StampCanvas() {
     for (const inst of liveStamps) {
       drawStampInstance(
         ctx, inst.x, inst.y, stampSize,
-        inst.angle, s, ox, oy, shapeColor, stampRotate45, stampImageUrl,
+        inst.angle, s, ox, oy, shapeColor, stampShape, stampImageUrl,
       );
     }
 
+    // Brush cursor preview
+    if (cursorDocPos) {
+      ctx.globalAlpha = 0.5;
+      drawStampInstance(
+        ctx, cursorDocPos.x, cursorDocPos.y, stampSize,
+        0, s, ox, oy, shapeColor, stampShape, stampImageUrl,
+      );
+      ctx.globalAlpha = 1.0;
+    }
+
     ctx.restore();
-  }, [objects, shapeColor, viewport, stampSize, stampRotate45, stampImageUrl, liveStamps]);
+  }, [objects, shapeColor, viewport, stampSize, stampShape, stampImageUrl, liveStamps, cursorDocPos]);
 
   // Pointer → document coordinate conversion
   function toDocCoords(e: React.PointerEvent<HTMLCanvasElement>): { x: number; y: number } {
@@ -111,15 +114,21 @@ export function StampCanvas() {
   }
 
   function handlePointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
-    if (!isDrawing) return;
     const pt = toDocCoords(e);
+    // Always update cursor preview
+    setCursorDocPos(pt);
+
+    if (!isDrawing) return;
+
     livePointsRef.current.push(pt);
-    const positions = distributeAlongPath(livePointsRef.current, useUIStore.getState().stampStep);
+    const { stampSize: size, stampStepIdx: idx } = useUIStore.getState();
+    const actualStep = STEP_MULTIPLIERS[Math.max(0, Math.min(9, idx))]! * size;
+    const positions = distributeAlongPath(livePointsRef.current, actualStep);
     setLiveStamps(
       positions.map((p) => ({
         x: p.x,
         y: p.y,
-        angle: useUIStore.getState().stampImageUrl !== null ? 0 : p.angle,
+        angle: 0,
         shape: 'roundedRect' as const,
       }))
     );
@@ -128,8 +137,9 @@ export function StampCanvas() {
   function handlePointerUp() {
     if (!isDrawing) return;
     setIsDrawing(false);
-    const { stampStep: step } = useUIStore.getState();
-    const stroke = buildFreehandStroke(livePointsRef.current, step);
+    const { stampSize: size, stampStepIdx: idx } = useUIStore.getState();
+    const actualStep = STEP_MULTIPLIERS[Math.max(0, Math.min(9, idx))]! * size;
+    const stroke = buildFreehandStroke(livePointsRef.current, actualStep);
     if (stroke.stamps.length > 0) {
       useSceneStore.getState().pushHistory();
       useSceneStore.getState().addStampStroke(stroke);
@@ -145,6 +155,7 @@ export function StampCanvas() {
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
+      onPointerLeave={() => setCursorDocPos(null)}
       style={{
         position: 'absolute',
         inset: 0,
@@ -153,7 +164,7 @@ export function StampCanvas() {
         display: 'block',
         pointerEvents: 'auto',
         touchAction: 'none',
-        cursor: 'crosshair',
+        cursor: 'none',
       }}
     />
   );

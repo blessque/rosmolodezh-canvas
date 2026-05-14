@@ -1,4 +1,5 @@
 import { useUIStore, type AppMode } from '@/store/uiStore';
+import { useSceneStore } from '@/store/sceneStore';
 
 const TABS: { id: AppMode; label: string }[] = [
   { id: 'generator', label: 'Generator' },
@@ -14,7 +15,11 @@ export function ModeTabBar() {
       {TABS.map((tab) => (
         <button
           key={tab.id}
-          onClick={() => setMode(tab.id)}
+          onClick={() => {
+            const snap = useUIStore.getState().captureSnapshot();
+            useSceneStore.getState().pushHistory(snap);
+            setMode(tab.id);
+          }}
           className={[
             'flex-1 rounded-[6px] px-4 py-[6px] font-cond-regular text-[14px] transition-colors',
             mode === tab.id

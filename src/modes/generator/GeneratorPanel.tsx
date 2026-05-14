@@ -41,6 +41,7 @@ export function GeneratorPanel() {
   const viewport     = useUIStore((s) => s.viewport);
   const setShapeColor  = useUIStore((s) => s.setShapeColor);
   const setCanvasColor = useUIStore((s) => s.setCanvasColor);
+  const pushHistory    = useSceneStore((s) => s.pushHistory);
   const imagePickerActive   = useUIStore((s) => s.imagePickerActive);
   const setImagePickerActive = useUIStore((s) => s.setImagePickerActive);
   const rectCount    = useUIStore((s) => s.rectCount);
@@ -60,6 +61,11 @@ export function GeneratorPanel() {
   );
   const imageUrl    = compound?.imageUrl;
   const hasMask     = (compound?.maskedRectIndices.length ?? 0) > 0;
+
+  // ── UI snapshot helper for undo ──────────────────────────────────────────
+  function captureUISnap() {
+    return useUIStore.getState().captureSnapshot();
+  }
 
   // ── Canvas aspect helper ─────────────────────────────────────────────────
   function getCanvasAspect(): CanvasAspect {
@@ -181,10 +187,10 @@ export function GeneratorPanel() {
         </button>
 
         {/* Shape colour */}
-        <ColorSlot label="Форма" color={shapeColor} onChange={setShapeColor} initialHistory={['#FE443B']} />
+        <ColorSlot label="Форма" color={shapeColor} onChange={(c) => { pushHistory(captureUISnap()); setShapeColor(c); }} initialHistory={['#FE443B']} />
 
         {/* Canvas colour */}
-        <ColorSlot label="Холст" color={canvasColor} onChange={setCanvasColor} />
+        <ColorSlot label="Холст" color={canvasColor} onChange={(c) => { pushHistory(captureUISnap()); setCanvasColor(c); }} />
 
         {/* Color presets */}
         <div className="flex flex-wrap gap-2">
@@ -193,7 +199,7 @@ export function GeneratorPanel() {
             return (
               <button
                 key={`${p.shape}-${p.canvas}`}
-                onClick={() => { setShapeColor(p.shape); setCanvasColor(p.canvas); }}
+                onClick={() => { pushHistory(captureUISnap()); setShapeColor(p.shape); setCanvasColor(p.canvas); }}
                 className={`w-8 h-8 rounded-[8px] overflow-hidden transition-transform
                   ${selected
                     ? 'border-2 border-[#0e0f11] scale-110'

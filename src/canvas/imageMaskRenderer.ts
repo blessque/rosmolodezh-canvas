@@ -80,17 +80,21 @@ export function computeCoverTransform(
 // Edit handle geometry helpers
 // ---------------------------------------------------------------------------
 
-const HANDLE_SIZE = 8;          // corner square half-size in screen px
+const HANDLE_SIZE = 8;           // corner square half-size in screen px
 const ROTATE_ZONE_OUTER = HANDLE_SIZE + 18; // 26px from corner center
+const EDGE_HIT_WIDTH = 12;       // px each side of edge line for hit test
+const MID_ROTATE_RADIUS = 12;   // hit radius around mid-side rotate dots
+const MID_ROTATE_OFFSET = 22;   // px outside mid-edge
 
-interface HandleLayout {
+type Pt = { x: number; y: number };
+
+export interface HandleLayout {
   /** corners in screen space: [NW, NE, SE, SW] */
-  corners: [
-    { x: number; y: number },
-    { x: number; y: number },
-    { x: number; y: number },
-    { x: number; y: number },
-  ];
+  corners: [Pt, Pt, Pt, Pt];
+  /** mid-edge points: [N, E, S, W] — on the border */
+  midEdges: [Pt, Pt, Pt, Pt];
+  /** mid-side rotate zones: [N, E, S, W] — outside the border */
+  midSideOuter: [Pt, Pt, Pt, Pt];
 }
 
 function getHandleLayout(
@@ -101,11 +105,12 @@ function getHandleLayout(
   const rad = rotateDeg * Math.PI / 180;
   const hw = imgW / 2;
   const hh = imgH / 2;
+  const cos = Math.cos(rad), sin = Math.sin(rad);
 
-  function rot(dx: number, dy: number): { x: number; y: number } {
+  function rot(dx: number, dy: number): Pt {
     return {
-      x: cx + dx * Math.cos(rad) - dy * Math.sin(rad),
-      y: cy + dx * Math.sin(rad) + dy * Math.cos(rad),
+      x: cx + dx * cos - dy * sin,
+      y: cy + dx * sin + dy * cos,
     };
   }
 
@@ -114,7 +119,37 @@ function getHandleLayout(
   const se = rot( hw,  hh);
   const sw = rot(-hw,  hh);
 
-  return { corners: [nw, ne, se, sw] };
+  // Mid-edge points (midpoints of each edge)
+  const mN: Pt = { x: (nw.x + ne.x) / 2, y: (nw.y + ne.y) / 2 };
+  const mE: Pt = { x: (ne.x + se.x) / 2, y: (ne.y + se.y) / 2 };
+  const mS: Pt = { x: (se.x + sw.x) / 2, y: (se.y + sw.y) / 2 };
+  const mW: Pt = { x: (sw.x + nw.x) / 2, y: (sw.y + nw.y) / 2 };
+
+  // Outward normals in screen space:
+  //  N edge outward normal (local -Y): ( sin, -cos)
+  //  E edge outward normal (local +X): ( cos,  sin)
+  //  S edge outward normal (local +Y): (-sin,  cos)
+  //  W edge outward normal (local -X): (-cos, -sin)
+  const d = MID_ROTATE_OFFSET;
+  const moN: Pt = { x: mN.x + sin * d, y: mN.y - cos * d };
+  const moE: Pt = { x: mE.x + cos * d, y: mE.y + sin * d };
+  const moS: Pt = { x: mS.x - sin * d, y: mS.y + cos * d };
+  const moW: Pt = { x: mW.x - cos * d, y: mW.y - sin * d };
+
+  return {
+    corners: [nw, ne, se, sw],
+    midEdges: [mN, mE, mS, mW],
+    midSideOuter: [moN, moE, moS, moW],
+  };
+}
+
+/** Minimum distance from point (px,py) to segment (ax,ay)→(bx,by). */
+function pointToSegDist(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const abx = bx - ax, aby = by - ay;
+  const len2 = abx * abx + aby * aby;
+  if (len2 === 0) return Math.hypot(px - ax, py - ay);
+  const t = Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / len2));
+  return Math.hypot(px - (ax + t * abx), py - (ay + t * aby));
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +159,8 @@ function getHandleLayout(
 export type HandleHit =
   | { kind: 'rotate' }
   | { kind: 'corner'; corner: 'nw' | 'ne' | 'se' | 'sw' }
+  | { kind: 'edge'; edge: 'N' | 'E' | 'S' | 'W' }
+  | { kind: 'mid-rotate'; edge: 'N' | 'E' | 'S' | 'W' }
   | { kind: 'body' }
   | null;
 
@@ -132,8 +169,9 @@ export function hitTestHandle(
   handles: HandleLayout,
 ): HandleHit {
   const cornerNames = ['nw', 'ne', 'se', 'sw'] as const;
+  const edgeNames = ['N', 'E', 'S', 'W'] as const;
 
-  // Check scale zones first (inner zone wins over rotate)
+  // 1. Corner scale zones (highest priority)
   for (let i = 0; i < 4; i++) {
     const c = handles.corners[i]!;
     if (Math.abs(sx - c.x) <= HANDLE_SIZE + 2 && Math.abs(sy - c.y) <= HANDLE_SIZE + 2) {
@@ -141,12 +179,34 @@ export function hitTestHandle(
     }
   }
 
-  // Check rotate zones (outer ring around each corner)
+  // 2. Corner rotate zones (ring around each corner)
   for (let i = 0; i < 4; i++) {
     const c = handles.corners[i]!;
-    const dist = Math.hypot(sx - c.x, sy - c.y);
-    if (dist <= ROTATE_ZONE_OUTER) {
+    if (Math.hypot(sx - c.x, sy - c.y) <= ROTATE_ZONE_OUTER) {
       return { kind: 'rotate' };
+    }
+  }
+
+  // 3. Mid-side rotate zones (small circles outside mid-edge)
+  for (let i = 0; i < 4; i++) {
+    const mo = handles.midSideOuter[i]!;
+    if (Math.hypot(sx - mo.x, sy - mo.y) <= MID_ROTATE_RADIUS) {
+      return { kind: 'mid-rotate', edge: edgeNames[i]! };
+    }
+  }
+
+  // 4. Edge scale strips (along each edge segment)
+  const [nw, ne, se, sw] = handles.corners;
+  const edgeSegs: [[Pt, Pt], [Pt, Pt], [Pt, Pt], [Pt, Pt]] = [
+    [nw!, ne!], // N
+    [ne!, se!], // E
+    [se!, sw!], // S
+    [sw!, nw!], // W
+  ];
+  for (let i = 0; i < 4; i++) {
+    const [a, b] = edgeSegs[i]!;
+    if (pointToSegDist(sx, sy, a.x, a.y, b.x, b.y) <= EDGE_HIT_WIDTH) {
+      return { kind: 'edge', edge: edgeNames[i]! };
     }
   }
 
@@ -268,12 +328,48 @@ export function renderImageMask(
     ctx.setLineDash([]);
 
     // Corner squares
+    ctx.fillStyle = 'white';
+    ctx.strokeStyle = '#0e0f11';
+    ctx.lineWidth = 1;
     for (const corner of handles.corners) {
+      ctx.fillRect(corner.x - HANDLE_SIZE / 2, corner.y - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE);
+      ctx.strokeRect(corner.x - HANDLE_SIZE / 2, corner.y - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE);
+    }
+
+    // Mid-edge scale handles (small rotated rectangles on each edge)
+    // `rad` is already defined above from rotateDeg
+    const edgeIsHoriz = [true, false, true, false]; // N/S = horiz, E/W = vert
+    for (let i = 0; i < 4; i++) {
+      const m = handles.midEdges[i]!;
+      const horiz = edgeIsHoriz[i];
+      ctx.save();
+      ctx.translate(m.x, m.y);
+      ctx.rotate(rad);
       ctx.fillStyle = 'white';
       ctx.strokeStyle = '#0e0f11';
       ctx.lineWidth = 1;
-      ctx.fillRect(corner.x - HANDLE_SIZE / 2, corner.y - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE);
-      ctx.strokeRect(corner.x - HANDLE_SIZE / 2, corner.y - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE);
+      if (horiz) {
+        ctx.fillRect(-6, -3, 12, 6);
+        ctx.strokeRect(-6, -3, 12, 6);
+      } else {
+        ctx.fillRect(-3, -6, 6, 12);
+        ctx.strokeRect(-3, -6, 6, 12);
+      }
+      ctx.restore();
+    }
+
+    // Mid-side rotate dots (small circles outside each edge)
+    for (let i = 0; i < 4; i++) {
+      const mo = handles.midSideOuter[i]!;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(mo.x, mo.y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = 'white';
+      ctx.strokeStyle = '#0e0f11';
+      ctx.lineWidth = 1;
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
     }
 
     ctx.restore();

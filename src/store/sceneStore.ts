@@ -1,16 +1,24 @@
 import { create } from 'zustand';
 import type { SceneObject, ImageTransform } from '@/types/scene';
+// store→store import: acceptable here because undo/redo must restore UI state
+import { useUIStore, type UndoableUISnapshot } from '@/store/uiStore';
+
+interface HistoryEntry {
+  objects: SceneObject[];
+  ui?: UndoableUISnapshot;
+}
 
 interface SceneStoreState {
   objects: SceneObject[];
-  past: SceneObject[][];
-  future: SceneObject[][];
+  past: HistoryEntry[];
+  future: HistoryEntry[];
 
   setCompoundShape: (obj: SceneObject & { type: 'compound' }) => void;
   addStampStroke: (obj: SceneObject & { type: 'stamp' }) => void;
   removeObject: (id: string) => void;
   clearAll: () => void;
-  pushHistory: () => void;
+  clearStampStrokes: () => void;
+  pushHistory: (uiSnap?: UndoableUISnapshot) => void;
   undo: () => void;
   redo: () => void;
 
@@ -75,34 +83,36 @@ export const useSceneStore = create<SceneStoreState>((set, get) => ({
     set((state) => ({ objects: state.objects.filter((o) => o.id !== id) })),
 
   clearAll: () => set({ objects: [] }),
+  clearStampStrokes: () =>
+    set((s) => ({ objects: s.objects.filter((o) => o.type !== 'stamp') })),
 
-  pushHistory: () =>
+  pushHistory: (uiSnap) =>
     set((s) => ({
-      past: [...s.past, cloneObjects(s.objects)].slice(-MAX_HISTORY),
+      past: [...s.past, { objects: cloneObjects(s.objects), ui: uiSnap }].slice(-MAX_HISTORY),
       future: [],
     })),
 
-  undo: () =>
-    set((s) => {
-      if (!s.past.length) return s;
-      const prev = s.past[s.past.length - 1]!;
-      return {
-        objects: prev,
-        past: s.past.slice(0, -1),
-        future: [cloneObjects(s.objects), ...s.future].slice(0, MAX_HISTORY),
-      };
-    }),
+  undo: () => {
+    const entry = get().past.at(-1);
+    if (!entry) return;
+    if (entry.ui) useUIStore.getState().restoreUISnapshot(entry.ui);
+    set((s) => ({
+      objects: entry.objects,
+      past: s.past.slice(0, -1),
+      future: [{ objects: cloneObjects(s.objects) }, ...s.future].slice(0, MAX_HISTORY),
+    }));
+  },
 
-  redo: () =>
-    set((s) => {
-      if (!s.future.length) return s;
-      const next = s.future[0]!;
-      return {
-        objects: next,
-        past: [...s.past, cloneObjects(s.objects)].slice(-MAX_HISTORY),
-        future: s.future.slice(1),
-      };
-    }),
+  redo: () => {
+    const entry = get().future[0];
+    if (!entry) return;
+    if (entry.ui) useUIStore.getState().restoreUISnapshot(entry.ui);
+    set((s) => ({
+      objects: entry.objects,
+      past: [...s.past, { objects: cloneObjects(s.objects) }].slice(-MAX_HISTORY),
+      future: s.future.slice(1),
+    }));
+  },
 
   setRawImageUrl: (imageUrl) =>
     set((s) => {

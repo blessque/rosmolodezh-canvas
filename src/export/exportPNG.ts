@@ -22,18 +22,20 @@ function identityViewport(docWidth: number, docHeight: number): ViewportState {
  * exportPNG — renders the current mode scene to an OffscreenCanvas and downloads a PNG.
  * Renders CompoundShape with identity viewport (no zoom/pan).
  */
-export function exportPNG(docWidth: number, docHeight: number): void {
+export function exportPNG(docWidth: number, docHeight: number, scale: 1 | 2 = 1): void {
   const objects = useSceneStore.getState().objects;
   const compound = objects.find((o) => o.type === 'compound') as CompoundShape | undefined;
-  const { shapeColor, canvasColor, stampSize, stampRotate45, stampImageUrl } = useUIStore.getState();
+  const { shapeColor, canvasColor, stampSize, stampShape, stampImageUrl } = useUIStore.getState();
 
-  const canvas = new OffscreenCanvas(docWidth, docHeight);
+  const canvas = new OffscreenCanvas(docWidth * scale, docHeight * scale);
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
+  if (scale !== 1) ctx.scale(scale, scale);
+
   const vp = identityViewport(docWidth, docHeight);
 
-  // Background
+  // Background (fill in document coords — ctx.scale already applied)
   ctx.fillStyle = canvasColor;
   ctx.fillRect(0, 0, docWidth, docHeight);
 
@@ -86,7 +88,7 @@ export function exportPNG(docWidth: number, docHeight: number): void {
         ctx as unknown as CanvasRenderingContext2D,
         inst.x, inst.y, stampSize,
         inst.angle, 1, 0, 0,
-        shapeColor, stampRotate45, stampImageUrl,
+        shapeColor, stampShape, stampImageUrl,
       );
     }
   }

@@ -1,4 +1,5 @@
 import { useUIStore } from '@/store/uiStore';
+import { useSceneStore } from '@/store/sceneStore';
 
 const SIZES = [
   { label: '4:5',    w: 1080, h: 1350 },
@@ -19,6 +20,7 @@ function radius(i: number, total: number) {
 export function CanvasSizeSelector() {
   const viewport = useUIStore((s) => s.viewport);
   const setDocumentSize = useUIStore((s) => s.setDocumentSize);
+  const pushHistory = useSceneStore((s) => s.pushHistory);
 
   return (
     <div className="flex flex-col gap-[2px]">
@@ -27,7 +29,10 @@ export function CanvasSizeSelector() {
         return (
           <button
             key={label}
-            onClick={() => setDocumentSize(w, h)}
+            onClick={() => {
+            pushHistory(useUIStore.getState().captureSnapshot());
+            setDocumentSize(w, h);
+          }}
             className={[
               'flex items-center justify-between p-[10px] transition-colors',
               radius(i, SIZES.length),

@@ -22,6 +22,8 @@ export default function App() {
   const pendingImageUrl = useUIStore((s) => s.pendingImageUrl);
   const setPendingImageUrl = useUIStore((s) => s.setPendingImageUrl);
 
+  const [pngScale, setPngScale] = useState<1 | 2>(1);
+
   // Cursor thumbnail position
   const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
 
@@ -49,9 +51,13 @@ export default function App() {
 
   // Global drag listeners
   useEffect(() => {
+    // dragDepth counter: fixes Safari spurious dragLeave on child elements
+    let dragDepth = 0;
+
     const onDragEnter = (e: DragEvent) => {
       if (e.dataTransfer?.types.includes('Files')) {
         e.preventDefault();
+        dragDepth++;
         useUIStore.getState().setIsDraggingFile(true);
       }
     };
@@ -61,12 +67,14 @@ export default function App() {
       }
     };
     const onDragLeave = (e: DragEvent) => {
-      if (e.relatedTarget === null) {
-        useUIStore.getState().setIsDraggingFile(false);
+      if (e.dataTransfer?.types.includes('Files')) {
+        dragDepth = Math.max(0, dragDepth - 1);
+        if (!dragDepth) useUIStore.getState().setIsDraggingFile(false);
       }
     };
     const onDrop = async (e: DragEvent) => {
       e.preventDefault();
+      dragDepth = 0;
       useUIStore.getState().setIsDraggingFile(false);
       const file = e.dataTransfer?.files[0];
       if (!file) return;
@@ -130,8 +138,20 @@ export default function App() {
           {/* Export card */}
           <div className="bg-white rounded-[22px] p-3 flex flex-col gap-4">
             <h2 className="font-cond-black font-black text-[24px] text-[#BBBFC8] uppercase leading-none">Картинка</h2>
+            <div className="flex gap-[2px] rounded-[8px] bg-[#E5E7EC] p-[3px]">
+              {([1, 2] as const).map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setPngScale(n)}
+                  className={`flex-1 h-[28px] font-cond-regular text-[14px] rounded-[6px] transition-colors
+                    ${pngScale === n ? 'bg-white text-[#0e0f11] shadow-sm' : 'text-[#6B7280] hover:text-[#0e0f11]'}`}
+                >
+                  {n}×
+                </button>
+              ))}
+            </div>
             <button
-              onClick={() => exportPNG(viewport.documentWidth, viewport.documentHeight)}
+              onClick={() => exportPNG(viewport.documentWidth, viewport.documentHeight, pngScale)}
               className="bg-[#0e0f11] text-white rounded-[8px] h-[44px] w-full font-cond-regular text-[18px] hover:opacity-90 transition-opacity"
             >
               PNG

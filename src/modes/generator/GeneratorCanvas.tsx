@@ -39,6 +39,15 @@ type DragState =
       pivotY: number;
     }
   | {
+      kind: 'edge-scale';
+      edge: 'N' | 'E' | 'S' | 'W';
+      startDocX: number;
+      startDocY: number;
+      startTransform: ImageTransform;
+      pivotX: number;
+      pivotY: number;
+    }
+  | {
       kind: 'rotate';
       centerX: number;
       centerY: number;
@@ -78,22 +87,6 @@ export function GeneratorCanvas() {
   const hoverRectsRef = useRef<number[]>([]);
   const [hoverTick, setHoverTick] = useState(0);
 
-  // DPR-aware resize
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-      const { width, height } = entry.contentRect;
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width  = Math.round(width * dpr);
-      canvas.height = Math.round(height * dpr);
-    });
-    observer.observe(canvas);
-    return () => observer.disconnect();
-  }, []);
-
   // ── Render loop ───────────────────────────────────────────────────────────
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -102,6 +95,11 @@ export function GeneratorCanvas() {
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
+    const { canvasWidth, canvasHeight } = viewport;
+    if (canvasWidth === 0 || canvasHeight === 0) return;
+    canvas.width  = Math.round(canvasWidth  * dpr);
+    canvas.height = Math.round(canvasHeight * dpr);
+
     ctx.save();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.scale(dpr, dpr);
@@ -182,8 +180,10 @@ export function GeneratorCanvas() {
         } else if (hit.kind === 'corner') {
           const cursorMap: Record<string, string> = { nw: 'nw-resize', ne: 'ne-resize', se: 'se-resize', sw: 'sw-resize' };
           setCursor(cursorMap[hit.corner] ?? 'default');
-        } else if (hit.kind === 'rotate') {
+        } else if (hit.kind === 'rotate' || hit.kind === 'mid-rotate') {
           setCursor(ROTATE_CURSOR);
+        } else if (hit.kind === 'edge') {
+          setCursor(hit.edge === 'N' || hit.edge === 'S' ? 'ns-resize' : 'ew-resize');
         }
       }
     } else {
@@ -228,7 +228,7 @@ export function GeneratorCanvas() {
       ) * 180 / Math.PI + 90;
       const delta = angle - drag.startAngle;
       setImageTransform({ ...cur, rotateDeg: drag.startRotateDeg + delta });
-    } else if (drag.kind === 'scale') {
+    } else if (drag.kind === 'scale' || drag.kind === 'edge-scale') {
       // Scale based on distance from pivot — use diagonal distance
       const startDist = Math.hypot(
         drag.startDocX - drag.pivotX,
@@ -326,15 +326,16 @@ export function GeneratorCanvas() {
     const handles = getHandleLayout(cxScreen.x, cxScreen.y, imgWScreen, imgHScreen, transform.rotateDeg);
     const hit = hitTestHandle(e.clientX - canvas.getBoundingClientRect().left, e.clientY - canvas.getBoundingClientRect().top, handles);
 
-    if (hit?.kind === 'rotate') {
+    if (hit?.kind === 'rotate' || hit?.kind === 'mid-rotate') {
+      const canvasRect = canvas.getBoundingClientRect();
       const curAngle = Math.atan2(
-        e.clientY - cxScreen.y - canvas.getBoundingClientRect().top,
-        e.clientX - cxScreen.x - canvas.getBoundingClientRect().left,
+        e.clientY - cxScreen.y - canvasRect.top,
+        e.clientX - cxScreen.x - canvasRect.left,
       ) * 180 / Math.PI + 90;
       dragRef.current = {
         kind: 'rotate',
-        centerX: cxScreen.x + canvas.getBoundingClientRect().left,
-        centerY: cxScreen.y + canvas.getBoundingClientRect().top,
+        centerX: cxScreen.x + canvasRect.left,
+        centerY: cxScreen.y + canvasRect.top,
         startAngle: curAngle,
         startRotateDeg: transform.rotateDeg,
       };
@@ -347,6 +348,21 @@ export function GeneratorCanvas() {
       dragRef.current = {
         kind: 'scale',
         corner: hit.corner,
+        startDocX: doc.x,
+        startDocY: doc.y,
+        startTransform: { ...transform },
+        pivotX: oppDoc.x,
+        pivotY: oppDoc.y,
+      };
+    } else if (hit?.kind === 'edge') {
+      const doc = screenToDoc(e.clientX, e.clientY, canvas, vp);
+      // Pivot = opposite mid-edge in doc space (N→S=2, E→W=3, S→N=0, W→E=1)
+      const oppIdx = { N: 2, E: 3, S: 0, W: 1 }[hit.edge];
+      const oppScreen = handles.midEdges[oppIdx!]!;
+      const oppDoc = canvasToDocument(oppScreen, vp);
+      dragRef.current = {
+        kind: 'edge-scale',
+        edge: hit.edge,
         startDocX: doc.x,
         startDocY: doc.y,
         startTransform: { ...transform },
@@ -380,12 +396,21 @@ export function GeneratorCanvas() {
     }
   }, [editingImage, setImageMask, setImageTransform]);
 
-  const onPointerUp = useCallback(() => {
+  const endDrag = useCallback(() => {
     if (dragRef.current) {
       dragRef.current = null;
       commitImageTransform();
     }
   }, [commitImageTransform]);
+
+  const onPointerUp = endDrag;
+
+  // Clean up drag if window loses focus or pointer capture is lost
+  useEffect(() => {
+    const onBlur = () => endDrag();
+    window.addEventListener('blur', onBlur);
+    return () => window.removeEventListener('blur', onBlur);
+  }, [endDrag]);
 
   return (
     <canvas
@@ -393,6 +418,8 @@ export function GeneratorCanvas() {
       onPointerMove={onPointerMove}
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
+      onPointerCancel={endDrag}
+      onLostPointerCapture={endDrag}
       style={{
         position: 'absolute',
         inset: 0,

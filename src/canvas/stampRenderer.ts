@@ -3,6 +3,8 @@
  * Used by StampCanvas (live view) and exportPNG (export).
  */
 
+import type { StampShape } from '@/store/uiStore';
+
 // ─── Image cache ──────────────────────────────────────────────────────────────
 
 const imageCache = new Map<string, HTMLImageElement>();
@@ -35,8 +37,8 @@ export function preloadStampImage(url: string): Promise<void> {
  * @param offsetX       Screen-space X offset (0 for export)
  * @param offsetY       Screen-space Y offset (0 for export)
  * @param color         CSS fill color string (used when no image loaded)
- * @param rotate45      Whether to add an extra 45° rotation (diamond mode)
- * @param stampImageUrl Optional data-URL; when set, clips image to shape instead of filling
+ * @param stampShape    Shape variant: 'square' | 'rhomb' (45° rotated) | 'image'
+ * @param stampImageUrl Optional data-URL; when set and stampShape==='image', clips image to shape
  */
 export function drawStampInstance(
   ctx: CanvasRenderingContext2D,
@@ -48,7 +50,7 @@ export function drawStampInstance(
   offsetX: number,
   offsetY: number,
   color: string,
-  rotate45: boolean,
+  stampShape: StampShape,
   stampImageUrl: string | null,
 ): void {
   const screenX = docX * scale + offsetX;
@@ -59,7 +61,7 @@ export function drawStampInstance(
 
   ctx.save();
   ctx.translate(screenX, screenY);
-  ctx.rotate(((angleDeg + (rotate45 ? 45 : 0)) * Math.PI) / 180);
+  ctx.rotate(((angleDeg + (stampShape === 'rhomb' ? 45 : 0)) * Math.PI) / 180);
 
   // Rounded square centered at (0, 0)
   const path = new Path2D();
@@ -74,7 +76,8 @@ export function drawStampInstance(
   path.arcTo(-half, -half, -half + r, -half, r);
   path.closePath();
 
-  const img = stampImageUrl ? (imageCache.get(stampImageUrl) ?? null) : null;
+  // Use image when stampShape === 'image' AND image is cached
+  const img = (stampShape === 'image' && stampImageUrl) ? (imageCache.get(stampImageUrl) ?? null) : null;
   if (img) {
     ctx.save();
     ctx.clip(path);
