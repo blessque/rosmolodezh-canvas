@@ -9,10 +9,14 @@ import { GeneratorCanvas } from '@/modes/generator/GeneratorCanvas';
 import { StampCanvas } from '@/modes/stamp/StampCanvas';
 import { exportPNG } from '@/export/exportPNG';
 import { exportSVG } from '@/export/exportSVG';
+import { getLogoForColors } from '@/utils/colorPresets';
 
 export default function App() {
   const mode = useUIStore((s) => s.mode);
   const viewport = useUIStore((s) => s.viewport);
+  const shapeColor  = useUIStore((s) => s.shapeColor);
+  const canvasColor = useUIStore((s) => s.canvasColor);
+  const logoSrc = getLogoForColors(shapeColor, canvasColor);
 
   const isDraggingFile = useUIStore((s) => s.isDraggingFile);
   const pendingImageUrl = useUIStore((s) => s.pendingImageUrl);
@@ -102,7 +106,7 @@ export default function App() {
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Left sidebar */}
         <aside className="w-60 shrink-0 overflow-y-auto no-scrollbar flex flex-col gap-3 px-3 py-3">
-          <img src="/icons/BM—logo_main.svg" className="h-7 w-auto shrink-0" alt="Logo" />
+          <img src={logoSrc} className="h-[68px] w-auto shrink-0 self-start" alt="Logo" />
           <ModeTabBar />
           {mode === 'generator' ? <GeneratorPanel /> : <StampPanel />}
         </aside>

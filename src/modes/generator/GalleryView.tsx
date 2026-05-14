@@ -31,10 +31,11 @@ const THUMB_W      = 120;
 const DIAG_THUMB_W = 360;
 
 const CANVAS_SIZES: Record<CanvasAspect, { w: number; h: number }> = {
-  square:         { w: 1080, h: 1080 },
-  wide:           { w: 1920, h: 1080 },
-  portrait:       { w: 1080, h: 1920 },
-  'portrait-4-5': { w: 1080, h: 1350 },
+  square:           { w: 1080, h: 1080 },
+  wide:             { w: 1920, h: 1080 },
+  'a3-landscape':   { w: 1754, h: 1240 },
+  portrait:         { w: 1080, h: 1920 },
+  'portrait-4-5':   { w: 1080, h: 1350 },
 };
 
 function thumbSize(canvas: CanvasAspect, thumbW = THUMB_W): { tw: number; th: number } {
@@ -57,10 +58,10 @@ function buildGalleryItems(): GalleryItem[] {
 
   // ── Systematic sweep ──────────────────────────────────────────────────────
   //
-  // 2 modes × 4 canvases × 2 sizeRatios × 2 topStyle combos × 2 relations = 64 shapes
-  // Random fill: 436 shapes (→ grand total 500)
+  // 2 modes × 5 canvases × 2 sizeRatios × 2 topStyle combos × 2 relations = 80 shapes
+  // Random fill: 420 shapes (→ grand total 500)
 
-  const canvases: CanvasAspect[]   = ['square', 'wide', 'portrait', 'portrait-4-5'];
+  const canvases: CanvasAspect[]   = ['square', 'wide', 'a3-landscape', 'portrait', 'portrait-4-5'];
   const sizeRatios                 = [0.65, 0.82];
 
   const leanModes: DistortionMode[]          = ['lean-right', 'lean-left'];
@@ -84,15 +85,16 @@ function buildGalleryItems(): GalleryItem[] {
     }
   }
 
-  // ── Random fill — 436 shapes, canvas-weighted ────────────────────────────
-  // Canvas counts: square 40, wide 128, portrait 128, portrait-4-5 140 = 436
+  // ── Random fill — 420 shapes, canvas-weighted ────────────────────────────
+  // 5 canvases: square 40, wide 80, a3-landscape 80, portrait 100, portrait-4-5 120 = 420
   const allModes: DistortionMode[] = ['lean-right', 'lean-left'];
 
   const canvasBatch: CanvasAspect[] = [
     ...Array<CanvasAspect>(40).fill('square'),
-    ...Array<CanvasAspect>(128).fill('wide'),
-    ...Array<CanvasAspect>(128).fill('portrait'),
-    ...Array<CanvasAspect>(140).fill('portrait-4-5'),
+    ...Array<CanvasAspect>(80).fill('wide'),
+    ...Array<CanvasAspect>(80).fill('a3-landscape'),
+    ...Array<CanvasAspect>(100).fill('portrait'),
+    ...Array<CanvasAspect>(120).fill('portrait-4-5'),
   ];
   // Fisher-Yates shuffle for render variety
   for (let i = canvasBatch.length - 1; i > 0; i--) {

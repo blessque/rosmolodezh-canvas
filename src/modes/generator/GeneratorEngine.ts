@@ -305,8 +305,6 @@ function buildTwoRectXCascade(
   baseMag: number,
   opts?: GenerateOpts,
 ): { rects: PerspectiveRect[]; overlapFrac: number } {
-  const minStagger = 4 * cornerRadius;
-
   // Adaptive width: w0 chosen so w0 + w1 – overlap ≈ docWidth
   const xOvlpAbs = rand(0.08, 0.18) * docWidth;
   const targetW  = docWidth * rand(0.93, 0.98);
