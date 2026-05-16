@@ -9,14 +9,13 @@ import { GeneratorCanvas } from '@/modes/generator/GeneratorCanvas';
 import { StampCanvas } from '@/modes/stamp/StampCanvas';
 import { exportPNG } from '@/export/exportPNG';
 import { exportSVG } from '@/export/exportSVG';
-import { getLogoForColors } from '@/utils/colorPresets';
+// import { getLogoForColors } from '@/utils/colorPresets'; // LOGO_RECOLOR_PRESERVED
 
 export default function App() {
   const mode = useUIStore((s) => s.mode);
   const viewport = useUIStore((s) => s.viewport);
-  const shapeColor  = useUIStore((s) => s.shapeColor);
-  const canvasColor = useUIStore((s) => s.canvasColor);
-  const logoSrc = getLogoForColors(shapeColor, canvasColor);
+  const stampImageUrl = useUIStore((s) => s.stampImageUrl);
+  const svgDisabled = mode === 'stamp' && !!stampImageUrl;
 
   const isDraggingFile = useUIStore((s) => s.isDraggingFile);
   const pendingImageUrl = useUIStore((s) => s.pendingImageUrl);
@@ -114,7 +113,7 @@ export default function App() {
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Left sidebar */}
         <aside className="w-60 shrink-0 overflow-y-auto no-scrollbar flex flex-col gap-3 px-3 py-3">
-          <img src={logoSrc} className="h-[68px] w-auto shrink-0 self-start" alt="Logo" />
+          <img src="/rosmolodezh-logo.svg" className="h-[68px] w-auto shrink-0 self-start" alt="Logo" />
           <ModeTabBar />
           {mode === 'generator' ? <GeneratorPanel /> : <StampPanel />}
         </aside>
@@ -131,13 +130,13 @@ export default function App() {
         <aside className="w-60 shrink-0 overflow-y-auto no-scrollbar flex flex-col gap-3 px-3 py-3">
           {/* Canvas size card */}
           <div className="bg-white rounded-[22px] p-3 flex flex-col gap-4">
-            <h2 className="font-cond-black font-black text-[24px] text-[#BBBFC8] uppercase leading-none">Холст</h2>
+            <h2 className="font-rm03 text-[28px] text-[#CED2DC] uppercase leading-none">Холст</h2>
             <CanvasSizeSelector />
           </div>
 
           {/* Export card */}
           <div className="bg-white rounded-[22px] p-3 flex flex-col gap-4">
-            <h2 className="font-cond-black font-black text-[24px] text-[#BBBFC8] uppercase leading-none">Картинка</h2>
+            <h2 className="font-rm03 text-[28px] text-[#CED2DC] uppercase leading-none">Картинка</h2>
             <div className="flex gap-[2px] rounded-[8px] bg-[#E5E7EC] p-[3px]">
               {([1, 2] as const).map((n) => (
                 <button
@@ -150,18 +149,22 @@ export default function App() {
                 </button>
               ))}
             </div>
-            <button
-              onClick={() => exportPNG(viewport.documentWidth, viewport.documentHeight, pngScale)}
-              className="bg-[#0e0f11] text-white rounded-[8px] h-[44px] w-full font-cond-regular text-[18px] hover:opacity-90 transition-opacity"
-            >
-              PNG
-            </button>
-            <button
-              onClick={() => exportSVG(viewport.documentWidth, viewport.documentHeight)}
-              className="bg-[#ECEEF3] text-[#0e0f11] rounded-[8px] h-[44px] w-full font-cond-regular text-[18px] hover:opacity-90 transition-opacity"
-            >
-              SVG
-            </button>
+            <div className="flex flex-col gap-[6px]">
+              <button
+                onClick={() => exportPNG(viewport.documentWidth, viewport.documentHeight, pngScale)}
+                className="bg-[#0e0f11] text-white rounded-[8px] h-[44px] w-full text-[18px] hover:opacity-90 transition-opacity"
+              >
+                PNG
+              </button>
+              <button
+                onClick={() => exportSVG(viewport.documentWidth, viewport.documentHeight)}
+                disabled={svgDisabled}
+                title={svgDisabled ? 'SVG export unavailable with image stamps' : undefined}
+                className="bg-[#ECEEF3] text-[#0e0f11] rounded-[8px] h-[44px] w-full text-[18px] transition-opacity disabled:opacity-30 disabled:cursor-not-allowed hover:enabled:opacity-90"
+              >
+                SVG
+              </button>
+            </div>
           </div>
         </aside>
       </div>

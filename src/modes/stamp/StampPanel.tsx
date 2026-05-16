@@ -1,12 +1,12 @@
 /**
- * StampPanel — controls for stamp mode: zig-zag fill, size/step sliders,
+ * StampPanel — controls for stamp mode: size/step sliders,
  * shape picker, color pickers, image upload, clear.
  */
 
 import { useRef } from 'react';
 import { useUIStore, STEP_MULTIPLIERS, type StampShape } from '@/store/uiStore';
 import { useSceneStore } from '@/store/sceneStore';
-import { buildZigZagStroke } from '@/modes/stamp/StampEngine';
+// import { buildZigZagStroke } from '@/modes/stamp/StampEngine'; // ZIGZAG_PRESERVED
 import { preloadStampImage } from '@/canvas/stampRenderer';
 import { Slider } from '@/components/Slider';
 import { ColorSlot } from '@/components/ColorSlot';
@@ -31,15 +31,6 @@ export function StampPanel() {
 
   function captureUISnap() {
     return useUIStore.getState().captureSnapshot();
-  }
-
-  function handleZigZag() {
-    const { documentWidth: w, documentHeight: h } = useUIStore.getState().viewport;
-    const { stampSize: size, stampStepIdx: idx } = useUIStore.getState();
-    useSceneStore.getState().pushHistory();
-    useSceneStore.getState().clearStampStrokes();
-    const stroke = buildZigZagStroke(w, h, size, idx);
-    useSceneStore.getState().addStampStroke(stroke);
   }
 
   async function handleFile(file: File) {
@@ -73,21 +64,13 @@ export function StampPanel() {
 
   return (
     <div className="bg-white rounded-[22px] p-3 flex flex-col gap-4">
-      <h2 className="font-cond-black font-black text-[24px] text-[#BBBFC8] uppercase leading-none">
+      <h2 className="font-rm03 text-[28px] text-[#CED2DC] uppercase leading-none">
         Штамп
       </h2>
 
-      {/* Zig-zag fill */}
-      <button
-        onClick={handleZigZag}
-        className="h-[44px] w-full font-cond-regular text-[18px] bg-[#0e0f11] text-white rounded-[8px] hover:opacity-90 transition-opacity"
-      >
-        Заполнить зигзагом
-      </button>
-
-      {/* Shape picker */}
+      {/* Shape picker — square and image only */}
       <div className="flex gap-[2px] rounded-[8px] bg-[#E5E7EC] p-[3px]">
-        {(['square', 'rhomb', 'image'] as const).map((s) => (
+        {(['square', 'image'] as const).map((s) => (
           <button
             key={s}
             onClick={() => handleShapeSelect(s)}
@@ -98,7 +81,7 @@ export function StampPanel() {
                 : 'text-[#6B7280] hover:text-[#0e0f11]',
             ].join(' ')}
           >
-            {s === 'square' ? '▪' : s === 'rhomb' ? '◆' : '🖼'}
+            {s === 'square' ? '▪' : '🖼'}
           </button>
         ))}
       </div>
@@ -113,50 +96,57 @@ export function StampPanel() {
         </button>
       )}
 
-      {/* Sliders — dark section */}
-      <div className="bg-[#0e0f11] rounded-[12px] p-3 flex flex-col gap-3">
+      {/* Sliders */}
+      <div className="flex flex-col gap-3">
         <Slider
           label="Размер"
           value={stampSize}
           min={60}
           max={120}
           step={5}
+          showDots
           onChange={setStampSize}
         />
-        {/* Discrete step slider */}
-        <div className="flex flex-col gap-1">
-          <div className="flex justify-between items-center">
-            <span className="text-[13px] text-[#6B7280] font-cond-regular">Шаг</span>
-            <span className="text-[13px] text-white font-cond-regular">×{stepMultiplier.toFixed(2)}</span>
-          </div>
-          <input
-            type="range"
-            min={0}
-            max={9}
-            step={1}
-            value={stampStepIdx}
-            onChange={(e) => setStampStepIdx(Number(e.target.value))}
-            className="w-full accent-white"
-          />
-        </div>
+        {/* Шаг — inverted: left=dense (idx=9), right=sparse (idx=0) */}
+        <Slider
+          label="Шаг"
+          value={9 - stampStepIdx}
+          min={0}
+          max={9}
+          step={1}
+          displayValue={`×${stepMultiplier.toFixed(2)}`}
+          showDots
+          onChange={(v) => setStampStepIdx(9 - v)}
+        />
       </div>
 
-      {/* Colour slots */}
+      {/* Colour slots + swap */}
       <ColorSlot
         label="Штамп"
         color={shapeColor}
         onChange={(c) => { pushHistory(captureUISnap()); setShapeColor(c); }}
         initialHistory={['#FE443B']}
       />
+      <button
+        onClick={() => {
+          pushHistory(captureUISnap());
+          setShapeColor(canvasColor);
+          setCanvasColor(shapeColor);
+        }}
+        className="self-center w-7 h-7 rounded-full bg-[#ECEEF3] text-[#0e0f11] flex items-center justify-center text-[15px] hover:opacity-80 transition-opacity"
+        title="Поменять цвета"
+      >
+        ⇄
+      </button>
       <ColorSlot
         label="Холст"
         color={canvasColor}
         onChange={(c) => { pushHistory(captureUISnap()); setCanvasColor(c); }}
       />
 
-      {/* Color presets */}
+      {/* Color presets — first 2 only */}
       <div className="flex flex-wrap gap-2">
-        {COLOR_PRESETS.map((p) => {
+        {COLOR_PRESETS.slice(0, 2).map((p) => {
           const selected = shapeColor === p.shape && canvasColor === p.canvas;
           return (
             <button
@@ -177,12 +167,10 @@ export function StampPanel() {
         })}
       </div>
 
-      <div className="h-px bg-[#E0E2E8]" />
-
       {/* Clear */}
       <button
         onClick={handleClear}
-        className="h-[44px] w-full font-cond-regular text-[14px] bg-[#ECEEF3] text-[#0e0f11] rounded-[8px] hover:opacity-90 transition-opacity"
+        className="mt-6 h-[44px] w-full font-cond-regular text-[14px] bg-[#ECEEF3] text-[#0e0f11] rounded-[8px] hover:opacity-90 transition-opacity"
       >
         Очистить
       </button>

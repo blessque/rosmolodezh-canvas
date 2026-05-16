@@ -106,7 +106,7 @@ export function ColorSlot({
                 setHistory((h) => h.map((x) => x === c ? color : x));
                 onChange(c);
               }}
-              className="w-4 h-4 rounded-[5px] border border-black/[0.08] cursor-pointer shrink-0 hover:opacity-80 transition-opacity"
+              className="w-[19px] h-[19px] rounded-[5px] border border-black/[0.08] cursor-pointer shrink-0 hover:opacity-80 transition-opacity"
               style={{ backgroundColor: c }}
             />
           ))}

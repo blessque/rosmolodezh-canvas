@@ -2,7 +2,7 @@ import { useSceneStore } from '@/store/sceneStore';
 import { useUIStore } from '@/store/uiStore';
 import { getCompoundSVGPath } from '@/canvas/compoundRenderer';
 import { getMaskBBox, getImageCache } from '@/canvas/imageMaskRenderer';
-import type { CompoundShape } from '@/types/scene';
+import type { CompoundShape, StampStroke } from '@/types/scene';
 
 /**
  * exportSVG — builds an SVG string from CompoundShape paths.
@@ -12,14 +12,14 @@ import type { CompoundShape } from '@/types/scene';
 export function exportSVG(docWidth: number, docHeight: number): void {
   const objects = useSceneStore.getState().objects;
   const compound = objects.find((o) => o.type === 'compound') as CompoundShape | undefined;
-  const { shapeColor, canvasColor } = useUIStore.getState();
+  const { mode, shapeColor, canvasColor, stampSize, stampShape } = useUIStore.getState();
 
   const svgLines: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${docWidth} ${docHeight}" width="${docWidth}" height="${docHeight}">`,
     `  <rect width="${docWidth}" height="${docHeight}" fill="${canvasColor}"/>`,
   ];
 
-  if (compound) {
+  if (mode === 'generator' && compound) {
     const { rects, maskedRectIndices, imageUrl, imageTransform } = compound;
     const maskedRects     = rects.filter((_, i) => maskedRectIndices.includes(i));
     const backgroundRects = rects.filter((_, i) => !maskedRectIndices.includes(i));
@@ -78,6 +78,24 @@ export function exportSVG(docWidth: number, docHeight: number): void {
       // Fallback: render entire compound
       const pathData = getCompoundSVGPath(compound, docWidth, docHeight);
       if (pathData) svgLines.push(`  <path d="${pathData}" fill="${shapeColor}"/>`);
+    }
+  }
+
+  // Stamp strokes — stamp mode only (plain <rect> elements; image stamps disabled via UI)
+  if (mode === 'stamp') {
+    const stampStrokes = objects.filter((o) => o.type === 'stamp') as StampStroke[];
+    for (const stroke of stampStrokes) {
+      for (const inst of stroke.stamps) {
+        const half = stampSize / 2;
+        const angleDeg = inst.angle + (stampShape === 'rhomb' ? 45 : 0);
+        const transform = angleDeg !== 0
+          ? ` transform="rotate(${angleDeg}, ${inst.x}, ${inst.y})"`
+          : '';
+        svgLines.push(
+          `  <rect x="${inst.x - half}" y="${inst.y - half}" ` +
+          `width="${stampSize}" height="${stampSize}" fill="${shapeColor}"${transform}/>`,
+        );
+      }
     }
   }
 

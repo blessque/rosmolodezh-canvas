@@ -207,7 +207,7 @@ export function distributeAlongPath(
 
 // ─── Stroke builders ──────────────────────────────────────────────────────────
 
-/** Build a zig-zag StampStroke as a casual diagonal polyline. */
+/* ZIGZAG_PRESERVED
 export function buildZigZagStroke(
   docW: number,
   docH: number,
@@ -215,16 +215,17 @@ export function buildZigZagStroke(
   stepIdx: number,
 ): StampStroke {
   const actualStep = STEP_MULTIPLIERS[Math.max(0, Math.min(9, stepIdx))]! * stampSize;
-  const waypoints = computeCasualZigZagPath(docW, docH);
-  const positions = distributeAlongPath(waypoints, actualStep);
+  const zigWaypoints = computeCasualZigZagPath(docW, docH);
+  const positions = distributeAlongPath(zigWaypoints, actualStep);
   const stamps: StampInstance[] = positions.map((p) => ({
     x: p.x,
     y: p.y,
     angle: 0,
     shape: 'roundedRect',
   }));
-  return { type: 'stamp', id: uid(), stamps };
+  return { type: 'stamp', id: uid(), stamps, waypoints: zigWaypoints };
 }
+ZIGZAG_PRESERVED */
 
 /** Build a StampStroke from freehand pointer points (doc-space). */
 export function buildFreehandStroke(
@@ -238,5 +239,5 @@ export function buildFreehandStroke(
     angle: 0,
     shape: 'roundedRect',
   }));
-  return { type: 'stamp', id: uid(), stamps };
+  return { type: 'stamp', id: uid(), stamps, waypoints: docPoints };
 }

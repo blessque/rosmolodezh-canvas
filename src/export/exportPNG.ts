@@ -25,7 +25,7 @@ function identityViewport(docWidth: number, docHeight: number): ViewportState {
 export function exportPNG(docWidth: number, docHeight: number, scale: 1 | 2 = 1): void {
   const objects = useSceneStore.getState().objects;
   const compound = objects.find((o) => o.type === 'compound') as CompoundShape | undefined;
-  const { shapeColor, canvasColor, stampSize, stampShape, stampImageUrl } = useUIStore.getState();
+  const { mode, shapeColor, canvasColor, stampSize, stampShape, stampImageUrl } = useUIStore.getState();
 
   const canvas = new OffscreenCanvas(docWidth * scale, docHeight * scale);
   const ctx = canvas.getContext('2d');
@@ -39,8 +39,8 @@ export function exportPNG(docWidth: number, docHeight: number, scale: 1 | 2 = 1)
   ctx.fillStyle = canvasColor;
   ctx.fillRect(0, 0, docWidth, docHeight);
 
-  // Compound shape
-  if (compound) {
+  // Compound shape — generator mode only
+  if (mode === 'generator' && compound) {
     const { rects, maskedRectIndices, imageUrl, imageTransform } = compound;
     const cornerRadius = rects[0]?.cornerRadius ?? 30;
     const maskedRects     = rects.filter((_, i) => maskedRectIndices.includes(i));
@@ -80,16 +80,18 @@ export function exportPNG(docWidth: number, docHeight: number, scale: 1 | 2 = 1)
     }
   }
 
-  // Stamp strokes (identity viewport: scale=1, offsets=0)
-  const stampStrokes = objects.filter((o) => o.type === 'stamp') as StampStroke[];
-  for (const stroke of stampStrokes) {
-    for (const inst of stroke.stamps) {
-      drawStampInstance(
-        ctx as unknown as CanvasRenderingContext2D,
-        inst.x, inst.y, stampSize,
-        inst.angle, 1, 0, 0,
-        shapeColor, stampShape, stampImageUrl,
-      );
+  // Stamp strokes — stamp mode only (identity viewport: scale=1, offsets=0)
+  if (mode === 'stamp') {
+    const stampStrokes = objects.filter((o) => o.type === 'stamp') as StampStroke[];
+    for (const stroke of stampStrokes) {
+      for (const inst of stroke.stamps) {
+        drawStampInstance(
+          ctx as unknown as CanvasRenderingContext2D,
+          inst.x, inst.y, stampSize,
+          inst.angle, 1, 0, 0,
+          shapeColor, stampShape, stampImageUrl,
+        );
+      }
     }
   }
 

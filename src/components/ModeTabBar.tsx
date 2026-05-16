@@ -2,8 +2,8 @@ import { useUIStore, type AppMode } from '@/store/uiStore';
 import { useSceneStore } from '@/store/sceneStore';
 
 const TABS: { id: AppMode; label: string }[] = [
-  { id: 'generator', label: 'Generator' },
-  { id: 'stamp', label: 'Stamp' },
+  { id: 'generator', label: 'Генератор' },
+  { id: 'stamp',     label: 'Штамп' },
 ];
 
 export function ModeTabBar() {

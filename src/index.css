@@ -6,6 +6,7 @@
   box-sizing: border-box;
 }
 
+@font-face { font-family: 'RM03'; font-weight: 100 900; font-style: normal; src: url('/fonts/RM03-VFVF.ttf') format('truetype'); }
 @font-face { font-family: 'ALSHaussNext';     font-weight: 400; src: url('/fonts/ALSHaussNext-Regular.woff2'), url('/fonts/ALSHaussNext-Regular.woff'); }
 @font-face { font-family: 'ALSHaussNextWide'; font-weight: 700; src: url('/fonts/ALSHaussNext-WideBold.woff2'), url('/fonts/ALSHaussNext-WideBold.woff'); }
 @font-face { font-family: 'ALSHaussMono';     font-weight: 400; src: url('/fonts/ALSHaussMono-Regular.woff2'), url('/fonts/ALSHaussMono-Regular.woff'); }
@@ -15,7 +16,10 @@
 @font-face { font-family: 'ALSHaussNextCond'; font-weight: 900; src: url('/fonts/ALSHaussNext-CondensedBlack.woff2'),   url('/fonts/ALSHaussNext-CondensedBlack.woff'); }
 
 body   { font-family: 'ALSHaussNext', sans-serif; }
-button { font-family: 'ALSHaussNextWide', sans-serif; }
+button { font-family: 'ALSHaussNextCond', sans-serif; }
+
+/* RM03 brand font — section titles and primary CTA buttons */
+.font-rm03 { font-family: 'RM03', sans-serif; font-weight: 800; }
 
 /* Hide native scrollbar */
 .no-scrollbar::-webkit-scrollbar { display: none; }

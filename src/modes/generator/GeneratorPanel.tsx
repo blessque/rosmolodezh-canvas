@@ -1,9 +1,9 @@
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import { useUIStore } from '@/store/uiStore';
 import { useSceneStore } from '@/store/sceneStore';
-import { generateCompoundShape, type CanvasAspect, type GenerateOpts } from '@/modes/generator/GeneratorEngine';
-import { GalleryView } from '@/modes/generator/GalleryView';
-import { DevPanel } from '@/modes/generator/DevPanel';
+import { generateCompoundShape, type CanvasAspect } from '@/modes/generator/GeneratorEngine';
+// import { GalleryView } from '@/modes/generator/GalleryView'; // DEV_PRESERVED
+// import { DevPanel } from '@/modes/generator/DevPanel'; // DEV_PRESERVED
 import { ColorSlot } from '@/components/ColorSlot';
 import { preloadImage, getMaskBBox, computeCoverTransform, getImageCache } from '@/canvas/imageMaskRenderer';
 import type { CompoundShape } from '@/types/scene';
@@ -48,9 +48,9 @@ export function GeneratorPanel() {
   const setRectCount = useUIStore((s) => s.setRectCount);
   const pendingImageUrl = useUIStore((s) => s.pendingImageUrl);
 
-  const [showGallery, setShowGallery] = useState(false);
-  const [galleryDiag, setGalleryDiag] = useState(false);
-  const [showDev, setShowDev] = useState(false);
+  // const [showGallery, setShowGallery] = useState(false); // DEV_PRESERVED
+  // const [galleryDiag, setGalleryDiag] = useState(false); // DEV_PRESERVED
+  // const [showDev, setShowDev] = useState(false); // DEV_PRESERVED
 
   const fileInputRef    = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
@@ -143,11 +143,7 @@ export function GeneratorPanel() {
     handleRegenerateWithRectCount(rectCount);
   }
 
-  function handleDevChange(opts: GenerateOpts) {
-    const { documentWidth: w, documentHeight: h } = viewport;
-    const { shape } = generateCompoundShape(w, h, opts, getCanvasAspect());
-    useSceneStore.getState().setCompoundShape(shape);
-  }
+  // DEV_PRESERVED: function handleDevChange(opts: GenerateOpts) { ... }
 
   // ── Thumbnail ─────────────────────────────────────────────────────────────
   const thumbStyle = imageUrl
@@ -159,8 +155,9 @@ export function GeneratorPanel() {
 
   return (
     <>
+      <div className="flex flex-col gap-[8px]">
       <div className="bg-white rounded-[22px] p-3 flex flex-col gap-4">
-        <h2 className="font-cond-black font-black text-[24px] text-[#BBBFC8] uppercase leading-none">Форма</h2>
+        <h2 className="font-rm03 text-[28px] text-[#CED2DC] uppercase leading-none">Форма</h2>
 
         {/* Rect count */}
         <div className="flex gap-[2px] rounded-[8px] bg-[#E5E7EC] p-[3px]">
@@ -181,20 +178,33 @@ export function GeneratorPanel() {
         {/* Regenerate */}
         <button
           onClick={handleRegenerate}
-          className="h-[44px] w-full font-cond-regular text-[18px] bg-[#0e0f11] text-white rounded-[8px] hover:opacity-90 transition-opacity"
+          className="h-[44px] w-full text-[18px] bg-[#0e0f11] text-white rounded-[8px] hover:opacity-90 transition-opacity"
         >
-          Regenerate
+          Сгенерировать
         </button>
 
         {/* Shape colour */}
         <ColorSlot label="Форма" color={shapeColor} onChange={(c) => { pushHistory(captureUISnap()); setShapeColor(c); }} initialHistory={['#FE443B']} />
 
+        {/* Swap colors */}
+        <button
+          onClick={() => {
+            pushHistory(captureUISnap());
+            setShapeColor(canvasColor);
+            setCanvasColor(shapeColor);
+          }}
+          className="self-center w-7 h-7 rounded-full bg-[#ECEEF3] text-[#0e0f11] flex items-center justify-center text-[15px] hover:opacity-80 transition-opacity"
+          title="Поменять цвета"
+        >
+          ⇄
+        </button>
+
         {/* Canvas colour */}
         <ColorSlot label="Холст" color={canvasColor} onChange={(c) => { pushHistory(captureUISnap()); setCanvasColor(c); }} />
 
-        {/* Color presets */}
+        {/* Color presets — first 2 only */}
         <div className="flex flex-wrap gap-2">
-          {COLOR_PRESETS.map((p) => {
+          {COLOR_PRESETS.slice(0, 2).map((p) => {
             const selected = shapeColor === p.shape && canvasColor === p.canvas;
             return (
               <button
@@ -215,13 +225,13 @@ export function GeneratorPanel() {
           })}
         </div>
 
-        <div className="h-px bg-[#E0E2E8]" />
+      </div>
 
-        {/* ── Image section ─────────────────────────────────────────────── */}
-        <div className="flex flex-col gap-2">
-          <h3 className="font-cond-black font-black text-[16px] text-[#BBBFC8] uppercase leading-none">
+      {/* ── Image card ─────────────────────────────────────────────────── */}
+      <div className="bg-white rounded-[22px] p-3 flex flex-col gap-4">
+          <h2 className="font-rm03 text-[28px] text-[#CED2DC] uppercase leading-none">
             Изображение
-          </h3>
+          </h2>
 
           {!imageUrl ? (
             /* Upload drop zone */
@@ -274,39 +284,6 @@ export function GeneratorPanel() {
           )}
         </div>
 
-        <div className="h-px bg-[#E0E2E8]" />
-
-        {/* Gallery */}
-        <div className="flex gap-2">
-          <button
-            onClick={() => { setGalleryDiag(false); setShowGallery(true); }}
-            className="bg-[#ECEEF3] text-[#0e0f11] rounded-[8px] h-[44px] flex-1 font-cond-regular text-[14px] hover:opacity-90 transition-opacity"
-          >
-            Gallery (500)
-          </button>
-          <button
-            onClick={() => { setGalleryDiag(true); setShowGallery(true); }}
-            className="bg-[#ECEEF3] text-[#0e0f11] rounded-[8px] h-[44px] flex-1 font-cond-regular text-[14px] hover:opacity-90 transition-opacity"
-          >
-            Diag (100)
-          </button>
-        </div>
-
-        {/* Dev settings collapsible */}
-        <div className="border-t border-[#E0E2E8] pt-3">
-          <button
-            onClick={() => setShowDev((v) => !v)}
-            className="w-full flex items-center justify-between text-xs text-[#BBBFC8] hover:text-[#0e0f11] transition-colors font-cond-regular"
-          >
-            <span className="uppercase tracking-wider">Dev settings</span>
-            <span>{showDev ? '▲' : '▼'}</span>
-          </button>
-          {showDev && (
-            <div className="mt-3 bg-[#0e0f11] rounded-[12px] p-3">
-              <DevPanel onChange={handleDevChange} />
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Hidden file inputs */}
@@ -325,13 +302,6 @@ export function GeneratorPanel() {
         onChange={(e) => handleFileInputChange(e, true)}
       />
 
-      {showGallery && (
-        <GalleryView
-          key={galleryDiag ? 'diag' : 'normal'}
-          diagMode={galleryDiag}
-          onClose={() => setShowGallery(false)}
-        />
-      )}
     </>
   );
 }

@@ -67,6 +67,8 @@ export interface StampStroke {
   type: 'stamp';
   id: string;
   stamps: StampInstance[];
+  /** Raw pointer path in doc-space; when present, stamps are redistributed dynamically */
+  waypoints?: { x: number; y: number }[];
 }
 
 // ─── Union ───────────────────────────────────────────────────────────────────

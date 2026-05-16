@@ -8,15 +8,17 @@ import { useUIStore, STEP_MULTIPLIERS } from '@/store/uiStore';
 import { drawStampInstance } from '@/canvas/stampRenderer';
 import { distributeAlongPath, buildFreehandStroke } from '@/modes/stamp/StampEngine';
 import type { StampStroke, StampInstance } from '@/types/scene';
+import { uid } from '@/utils/uid';
 
 export function StampCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const objects      = useSceneStore((s) => s.objects);
-  const shapeColor   = useUIStore((s) => s.shapeColor);
-  const viewport     = useUIStore((s) => s.viewport);
-  const stampSize    = useUIStore((s) => s.stampSize);
-  const stampShape   = useUIStore((s) => s.stampShape);
+  const objects       = useSceneStore((s) => s.objects);
+  const shapeColor    = useUIStore((s) => s.shapeColor);
+  const viewport      = useUIStore((s) => s.viewport);
+  const stampSize     = useUIStore((s) => s.stampSize);
+  const stampStepIdx  = useUIStore((s) => s.stampStepIdx);
+  const stampShape    = useUIStore((s) => s.stampShape);
   const stampImageUrl = useUIStore((s) => s.stampImageUrl);
 
   // Live drawing state — not in store (not undoable mid-gesture)
@@ -53,13 +55,16 @@ export function StampCanvas() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.scale(dpr, dpr);
 
-    // Render committed strokes
+    // Render committed strokes (redistributed from waypoints when size/step changes)
     const strokes = objects.filter((o) => o.type === 'stamp') as StampStroke[];
     for (const stroke of strokes) {
-      for (const inst of stroke.stamps) {
+      const actualStep = STEP_MULTIPLIERS[Math.max(0, Math.min(9, stampStepIdx))]! * stampSize;
+      const distributed = stroke.waypoints ? distributeAlongPath(stroke.waypoints, actualStep) : null;
+      const positions = distributed && distributed.length > 0 ? distributed : stroke.stamps;
+      for (const inst of positions) {
         drawStampInstance(
           ctx, inst.x, inst.y, stampSize,
-          inst.angle, s, ox, oy, shapeColor, stampShape, stampImageUrl,
+          0, s, ox, oy, shapeColor, stampShape, stampImageUrl,
         );
       }
     }
@@ -83,7 +88,7 @@ export function StampCanvas() {
     }
 
     ctx.restore();
-  }, [objects, shapeColor, viewport, stampSize, stampShape, stampImageUrl, liveStamps, cursorDocPos]);
+  }, [objects, shapeColor, viewport, stampSize, stampStepIdx, stampShape, stampImageUrl, liveStamps, cursorDocPos]);
 
   // Pointer → document coordinate conversion
   function toDocCoords(e: React.PointerEvent<HTMLCanvasElement>): { x: number; y: number } {
@@ -136,9 +141,29 @@ export function StampCanvas() {
   function handlePointerUp() {
     if (!isDrawing) return;
     setIsDrawing(false);
+
+    const pts = livePointsRef.current;
+
+    if (pts.length === 1) {
+      // Single click — place one stamp at the click position
+      const pt = pts[0]!;
+      const singleStroke: StampStroke = {
+        type: 'stamp',
+        id: uid(),
+        stamps: [{ x: pt.x, y: pt.y, angle: 0, shape: 'roundedRect' }],
+        waypoints: [pt],
+      };
+      useSceneStore.getState().pushHistory();
+      useSceneStore.getState().addStampStroke(singleStroke);
+      livePointsRef.current = [];
+      setLiveStamps([]);
+      return;
+    }
+
+    // Normal freehand path (unchanged)
     const { stampSize: size, stampStepIdx: idx } = useUIStore.getState();
     const actualStep = STEP_MULTIPLIERS[Math.max(0, Math.min(9, idx))]! * size;
-    const stroke = buildFreehandStroke(livePointsRef.current, actualStep);
+    const stroke = buildFreehandStroke(pts, actualStep);
     if (stroke.stamps.length > 0) {
       useSceneStore.getState().pushHistory();
       useSceneStore.getState().addStampStroke(stroke);
