@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import { useUIStore } from '@/store/uiStore';
 import { useSceneStore } from '@/store/sceneStore';
-import { generateCompoundShape, type CanvasAspect } from '@/modes/generator/GeneratorEngine';
+import { generateCompoundShape, type CanvasAspect, type GenerateOpts } from '@/modes/generator/GeneratorEngine';
 // import { GalleryView } from '@/modes/generator/GalleryView'; // DEV_PRESERVED
 // import { DevPanel } from '@/modes/generator/DevPanel'; // DEV_PRESERVED
 import { ColorSlot } from '@/components/ColorSlot';

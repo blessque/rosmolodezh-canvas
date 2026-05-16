@@ -152,37 +152,37 @@ export function DevPanel({ onChange }: DevPanelProps) {
       <p className="text-white/40 uppercase tracking-wider font-medium mt-2">Size & layout</p>
 
       <Slider label="Distortion depth" value={s.baseMag} min={0.10} max={0.55} step={0.01}
-        onChange={(v) => update({ baseMag: v })} formatValue={(v) => v.toFixed(2)} />
+        onChange={(v) => update({ baseMag: v })} displayValue={s.baseMag.toFixed(2)} />
       <Slider label="Size ratio" value={s.sizeRatio} min={0.45} max={0.95} step={0.01}
-        onChange={(v) => update({ sizeRatio: v })} formatValue={(v) => v.toFixed(2)} />
+        onChange={(v) => update({ sizeRatio: v })} displayValue={s.sizeRatio.toFixed(2)} />
       <Slider label="Corner radius" value={s.cornerRadiusMult} min={0.005} max={0.06} step={0.005}
-        onChange={(v) => update({ cornerRadiusMult: v })} formatValue={(v) => v.toFixed(3)} />
+        onChange={(v) => update({ cornerRadiusMult: v })} displayValue={s.cornerRadiusMult.toFixed(3)} />
       <Slider label="Overlap" value={s.overlapFrac} min={0.04} max={0.72} step={0.01}
-        onChange={(v) => update({ overlapFrac: v })} formatValue={(v) => v.toFixed(2)} />
+        onChange={(v) => update({ overlapFrac: v })} displayValue={s.overlapFrac.toFixed(2)} />
       <Slider label="Stagger" value={s.staggerFrac} min={0.02} max={0.25} step={0.01}
-        onChange={(v) => update({ staggerFrac: v })} formatValue={(v) => v.toFixed(2)} />
+        onChange={(v) => update({ staggerFrac: v })} displayValue={s.staggerFrac.toFixed(2)} />
 
       {/* ── Rect 0 ─────────────────────────────────────────── */}
       <p className="text-white/40 uppercase tracking-wider font-medium mt-2">Rect 0</p>
       <BtnGroup label="Top style" value={s.topStyle0} options={['flat', 'angled']}
         onSelect={(v) => update({ topStyle0: v as TopStyle })} />
       <Slider label="Rotation" value={s.rotation0} min={-12} max={12} step={0.5}
-        onChange={(v) => update({ rotation0: v })} formatValue={(v) => `${v}°`} />
+        onChange={(v) => update({ rotation0: v })} displayValue={`${s.rotation0}°`} />
       <Slider label="Bottom-right offset" value={s.bottomRight0} min={-0.25} max={0.55} step={0.01}
-        onChange={(v) => update({ bottomRight0: v })} formatValue={(v) => v.toFixed(2)} />
+        onChange={(v) => update({ bottomRight0: v })} displayValue={s.bottomRight0.toFixed(2)} />
       <Slider label="Bottom-left offset" value={s.bottomLeft0} min={0} max={0.20} step={0.01}
-        onChange={(v) => update({ bottomLeft0: v })} formatValue={(v) => v.toFixed(2)} />
+        onChange={(v) => update({ bottomLeft0: v })} displayValue={s.bottomLeft0.toFixed(2)} />
 
       {/* ── Rect 1 ─────────────────────────────────────────── */}
       <p className="text-white/40 uppercase tracking-wider font-medium mt-2">Rect 1</p>
       <BtnGroup label="Top style" value={s.topStyle1} options={['flat', 'angled']}
         onSelect={(v) => update({ topStyle1: v as TopStyle })} />
       <Slider label="Rotation" value={s.rotation1} min={-12} max={12} step={0.5}
-        onChange={(v) => update({ rotation1: v })} formatValue={(v) => `${v}°`} />
+        onChange={(v) => update({ rotation1: v })} displayValue={`${s.rotation1}°`} />
       <Slider label="Bottom-right offset" value={s.bottomRight1} min={-0.25} max={0.55} step={0.01}
-        onChange={(v) => update({ bottomRight1: v })} formatValue={(v) => v.toFixed(2)} />
+        onChange={(v) => update({ bottomRight1: v })} displayValue={s.bottomRight1.toFixed(2)} />
       <Slider label="Bottom-left offset" value={s.bottomLeft1} min={0} max={0.20} step={0.01}
-        onChange={(v) => update({ bottomLeft1: v })} formatValue={(v) => v.toFixed(2)} />
+        onChange={(v) => update({ bottomLeft1: v })} displayValue={s.bottomLeft1.toFixed(2)} />
 
       {/* ── Rect 2 (3-rect only) ──────────────────────────── */}
       {show3 && (
@@ -191,11 +191,11 @@ export function DevPanel({ onChange }: DevPanelProps) {
           <BtnGroup label="Top style" value={s.topStyle2} options={['flat', 'angled']}
             onSelect={(v) => update({ topStyle2: v as TopStyle })} />
           <Slider label="Rotation" value={s.rotation2} min={-12} max={12} step={0.5}
-            onChange={(v) => update({ rotation2: v })} formatValue={(v) => `${v}°`} />
+            onChange={(v) => update({ rotation2: v })} displayValue={`${s.rotation2}°`} />
           <Slider label="Bottom-right offset" value={s.bottomRight2} min={-0.25} max={0.55} step={0.01}
-            onChange={(v) => update({ bottomRight2: v })} formatValue={(v) => v.toFixed(2)} />
+            onChange={(v) => update({ bottomRight2: v })} displayValue={s.bottomRight2.toFixed(2)} />
           <Slider label="Bottom-left offset" value={s.bottomLeft2} min={0} max={0.20} step={0.01}
-            onChange={(v) => update({ bottomLeft2: v })} formatValue={(v) => v.toFixed(2)} />
+            onChange={(v) => update({ bottomLeft2: v })} displayValue={s.bottomLeft2.toFixed(2)} />
         </>
       )}
     </div>

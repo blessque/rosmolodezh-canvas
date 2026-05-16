@@ -4,7 +4,6 @@
 
 import { uid } from '@/utils/uid';
 import type { StampInstance, StampStroke } from '@/types/scene';
-import { STEP_MULTIPLIERS } from '@/store/uiStore';
 
 // ─── Casual zig-zag path ──────────────────────────────────────────────────────
 
